@@ -1,0 +1,123 @@
+# Data configuration.
+#
+# Dataset selected in Phase 1 (Decision 008). Values are filled only from
+# verified dataset documentation or from our own measurements; anything not
+# yet decided stays `null` (see PROJECT_CONTEXT.md).
+#
+# Storage LOCATION is not configured here: raw files live in
+#   <data_root>/raw/<dataset.raw_subdir>/
+# where data_root comes from --data-root, $SEISMIC_DATA_ROOT or
+# configs/config.yaml (see src/seismic_ml/paths.py). Only relative names below.
+
+dataset:
+  name: pnw
+  full_name: Curated Pacific Northwest AI-ready Seismic Dataset
+  citation: "Ni et al. (2023), Seismica 2(1), doi:10.26443/seismica.v2i1.368"
+  source: https://github.com/niyiyu/PNW-ML
+  license: CC BY 4.0
+  # No single release tag covers the data files; the exact snapshot is pinned by
+  # the server ETags + our SHA-256 checksums in <raw>/pnw/PROVENANCE.json.
+  version: "PNW-ML server snapshot (see PROVENANCE.json)"
+  format: seisbench        # HDF5 waveforms + CSV metadata (SeisBench layout)
+  raw_subdir: pnw
+  remote_base_url: https://dasway.ess.washington.edu/shared/niyiyu/PNW-ML/
+
+  # File names are relative to <raw>/pnw/ (and to remote_base_url for remote files).
+  # A local waveform source is looked up in order: full file, then exploration subset.
+  collections:
+    comcat:                # ANSS ComCat events: earthquakes + explosions
+      metadata_file: comcat_metadata.csv          # downloaded in full
+      waveform_file: comcat_waveforms.hdf5        # ~67 GB remote; read by byte ranges
+      subset_file: subsets/comcat_exploration_subset.hdf5
+      label_column: source_type_pnsn_label        # PNSN analyst label (dataset README: prefer it)
+    exotic:                # PNSN-only "exotic" events (no origin/location/magnitude)
+      metadata_file: exotic_metadata.csv
+      waveform_file: exotic_waveforms.hdf5        # ~4.1 GB remote
+      subset_file: subsets/exotic_exploration_subset.hdf5
+      label_column: source_type
+
+  # Phase 1 exploration subset: event-complete (every trace of each selected
+  # event), seeded uniform sampling of events within each label (-1 = all).
+  # Used for waveform inspection only — NOT a training set.
+  exploration_subset:
+    seed: 42
+    workers: 6            # parallel HTTP range connections
+    comcat:
+      label_column: source_type_pnsn_label
+      events_per_label: {eq: 540, px: 560, lf: 60, ex: -1, qb: -1, su: -1, sn: -1, uk: -1}
+    exotic:
+      label_column: source_type
+      events_per_label: {"surface event": 500, "sonic boom": -1, thunder: -1, "plane crash": -1}
+
+waveform:
+  sample_rate: 100         # Hz — measured: every trace (curators resampled to 100 Hz)
+  num_channels: 3
+  channel_order: [E, N, Z] # row order of the stored arrays (/data_format/component_order)
+  source_windows:          # measured; source windows differ per collection
+    comcat: {samples: 15001, start: "50 s before origin time"}
+    exotic: {samples: 18001, start: "70 s before P pick (80 s before S if no P)"}
+  window_length_s: 60      # model window = preprocessing.window.pre_p_s + post_p_s (Decision 020)
+
+stations:
+  num_stations: null             # padding size N: null = pad to the largest event in each batch
+                                 # (observed max 41); fixed caps would be a silent truncation
+  min_stations_per_event: 1      # keep all events; graph phases filter / report per station-count bin
+
+labels:
+  num_classes: 2
+  # Order defines the class index used by the models (index 0, index 1, ...).
+  class_names: [earthquake, anthropogenic]
+  # Mapping (Decision 010) from PNSN analyst labels to supervised classes,
+  # used by src/seismic_ml/data/splits.py (Phase 2). A label without an
+  # explicit role (class_map / ood_labels / excluded_labels) raises an error.
+  class_map:
+    eq: earthquake
+    px: anthropogenic      # probable explosion (mostly quarry blasts)
+    ex: anthropogenic      # explosion
+    qb: anthropogenic      # quarry blast
+  # OOD candidates (Decision 011): never in train/val/test (split value "ood").
+  ood_labels:
+    comcat: [lf, su, sn]   # low-frequency, surface event, sonic boom (inside ComCat "earthquake")
+    exotic: [surface event, sonic boom, thunder, plane crash]
+  excluded_labels:
+    comcat: [uk]           # unknown — neither class nor meaningful OOD
+
+preprocessing:             # Phase 2 — justified in PROJECT_CONTEXT.md §11H (Decisions 018-022)
+  detrend: linear          # on the full trace, per component
+  taper_s: 2.0             # cosine taper at both trace ends before filtering
+  bandpass:                # BH channels carry no content > ~20 Hz (upsampled from 40 sps);
+    freqmin: 1.0           #   < 1 Hz: microseism-dominated (SNR ~1) and EH (1 Hz geophone) roll-off
+    freqmax: 16.0
+    corners: 4
+    zerophase: true
+  window:                  # P-aligned per station (removes origin- vs pick-aligned artefacts)
+    pre_p_s: 10.0
+    post_p_s: 50.0         # 99 % of S-P <= 21 s; full signal for ~80 % of events
+    edge_margin_s: 5.0     # window must stay this far from trace ends (taper/filter transients)
+    resample_margin_s: 1.0 # extra context resampled then trimmed (exact P sample, no FIR edge)
+  target_sample_rate: 50   # Hz; > 2 x freqmax, exact decimation factor 2
+  normalization:
+    method: std            # robust to isolated telemetry spikes (vs peak)
+    scope: station         # one scale per station over live components: keeps Z/H and P/S ratios
+  p_wave_alignment: true
+  quality_checks:
+    require_p_pick: true   # traces without P cannot be aligned -> dropped (reason recorded)
+    clip_min_samples: 10   # >= 10 samples at |peak| -> flagged as possibly clipped (kept)
+
+spectrogram:               # Phase 4 — time-frequency experiments
+  enabled: false
+  n_fft: null
+  hop_length: null
+  win_length: null
+
+split:
+  # S1 temporal split (Decisions 012, 023); leakage rules: PROJECT_CONTEXT.md §12, §11F.
+  strategy: temporal
+  group_by: event                  # all traces of an event share a split
+  train_end: "2019-01-01"          # UTC; train = origin < train_end
+  val_end: "2021-01-01"            # val = [train_end, val_end); test = >= val_end
+  buffer_days: 7                   # events < 7 days before a boundary are excluded
+  site_cell_deg: 0.1               # source-site cells for seen/new-site reporting
+  exclude_label_conflicts_from: [val, test]
+  duplicate_max_dt_s: 2.0          # candidate duplicates (different IDs) kept together
+  duplicate_max_dist_deg: 0.05

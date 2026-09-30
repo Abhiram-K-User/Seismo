@@ -1,0 +1,39 @@
+# Entry-point configuration.
+#
+# Load with:  seismic_ml.config.load_config("configs/config.yaml")
+# The files listed under `includes` are loaded and attached under the
+# corresponding top-level keys (data / model / training).
+#
+# Convention: `null` means "not decided yet" (usually dataset-dependent).
+# Code must not silently replace a `null` with a guessed default; decisions
+# are recorded in PROJECT_CONTEXT.md (Decision Log) when values are filled in.
+
+project:
+  name: seismic-event-classification
+
+seed: 42
+# Enables deterministic PyTorch algorithms (slower). See utils/reproducibility.py.
+deterministic: false
+
+experiment:
+  name: null   # human-readable name, set per experiment
+  id: null     # generated at run time (utils.reproducibility.generate_experiment_id)
+  tags: []
+
+# Storage locations (see src/seismic_ml/paths.py). NEVER put a machine-specific
+# absolute path here. Precedence, first match wins:
+#   1. command-line flag   --data-root / --output-root
+#   2. environment         SEISMIC_DATA_ROOT / SEISMIC_OUTPUT_ROOT
+#   3. these values
+# Relative values are resolved against the project root (the parent of configs/).
+# Layout under data_root:   raw/ (immutable source data), interim/, processed/
+# Layout under output_root: checkpoints/, logs/, figures/, results/
+# Colab example: SEISMIC_DATA_ROOT=/content/drive/MyDrive/seismic-data
+paths:
+  data_root: data
+  output_root: outputs
+
+includes:
+  data: data.yaml
+  model: model.yaml
+  training: training.yaml

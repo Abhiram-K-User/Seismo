@@ -1,0 +1,65 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Environments ---
+.venv/
+venv/
+env/
+.env
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- Data (never commit datasets; keep directory placeholders) ---
+data/raw/*
+data/interim/*
+data/processed/*
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+# The manifest describes the data (counts, checksums, relative paths) — no data itself.
+!data/processed/dataset_manifest.json
+
+# Common seismic / array formats anywhere in the tree
+*.mseed
+*.miniseed
+*.sac
+*.SAC
+*.h5
+*.hdf5
+*.npz
+*.npy
+
+# --- Outputs (checkpoints, logs, figures, results are generated) ---
+outputs/checkpoints/*
+outputs/logs/*
+outputs/figures/*
+outputs/results/*
+!outputs/checkpoints/.gitkeep
+!outputs/logs/.gitkeep
+!outputs/figures/.gitkeep
+!outputs/results/.gitkeep
+*.pt
+*.pth
+*.ckpt
+
+# --- Experiment tracking tools (if adopted later) ---
+wandb/
+mlruns/
+lightning_logs/

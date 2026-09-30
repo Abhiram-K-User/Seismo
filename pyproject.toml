@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seismic-ml"
+version = "0.0.1"
+description = "Research codebase: uncertainty-aware spatio-temporal GNN for natural vs anthropogenic seismic event classification (Phase 0 scaffold)."
+readme = "README.md"
+requires-python = ">=3.11"
+# Only what the Phase 0 code actually imports. Later phases add their own
+# dependencies (e.g. SciPy, PyTorch Geometric, scikit-learn, Matplotlib) when
+# they need them, and record the choice in PROJECT_CONTEXT.md (Decision Log).
+dependencies = [
+    "numpy>=1.24",
+    "torch>=2.1",
+    "pyyaml>=6.0",
+    "h5py>=3.9",       # Phase 1: SeisBench-layout HDF5 waveforms (PNW dataset)
+    "pandas>=2.0",     # Phase 1: metadata catalogues
+    "scipy>=1.11",     # Phase 2: Butterworth band-pass, zero-phase filtering, polyphase resampling
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+]
+# Phase 1: plotting helpers + executing the exploration notebooks headlessly.
+notebooks = [
+    "matplotlib>=3.7",
+    "ipykernel>=6.0",
+    "nbclient>=0.8",
+    "nbformat>=5.9",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Lets the test suite import the package from a fresh checkout even before
+# `pip install -e .` has been run.
+pythonpath = ["src"]
+addopts = "-ra"

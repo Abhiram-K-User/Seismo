@@ -1,0 +1,47 @@
+# Model configuration.
+#
+# All architecture hyperparameters are `null`: they are chosen experimentally
+# in the phase that implements each component (see PROJECT_CONTEXT.md §14).
+# `enabled: false` marks components that do not exist yet.
+
+num_classes: 2
+
+encoder:                          # Stage A — Phase 3 (waveform), Phase 4 (spectrogram)
+  type: cnn
+  in_channels: 3
+  input_representation: waveform  # waveform | spectrogram
+  embedding_dim: null
+
+station_pooling: null             # mean | max | attention (non-graph baselines, Phase 3)
+
+graph:                            # Stage B — Phase 5 (static), Phase 7 (dynamic)
+  enabled: false
+  type: null                      # e.g. spatial | waveform_similarity | dynamic
+  spatial:
+    method: null
+    k_neighbors: null
+    radius_km: null
+    sigma_km: null
+  waveform_similarity:
+    method: null
+    max_lag_s: null
+  # Conceptual combination A_ij = alpha * geo_ij + beta * wave_ij (not final)
+  alpha: null
+  beta: null
+
+gat:                              # Stage C — Phase 6
+  enabled: false
+  hidden_dim: null
+  num_heads: null
+  num_layers: null
+  dropout: null
+
+stgnn:                            # Stage D — Phase 7
+  enabled: false
+  hidden_dim: null
+  num_layers: null
+  dropout: null
+
+head:                             # Stage E — softmax (Phase 3) / evidential (Phase 8)
+  type: null                      # softmax | evidential
+  evidence_activation: null       # relu | softplus | exp (evidential only)

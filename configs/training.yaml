@@ -1,0 +1,40 @@
+# Training configuration.
+#
+# No training pipeline exists yet (planned from Phase 3). Values are `null`
+# until chosen and justified in the phase that uses them.
+# The random seed lives in config.yaml (single source).
+
+device: auto        # auto | cpu | cuda
+num_workers: 0
+
+batch_size: null
+max_epochs: null
+
+optimizer:
+  name: null
+  lr: null
+  weight_decay: null
+
+scheduler:
+  name: null
+
+early_stopping:
+  monitor: null
+  patience: null
+
+loss:
+  name: null          # cross_entropy (softmax baselines) | evidential (Phase 8)
+  evidential:         # Phase 8 — formulation not chosen yet
+    variant: null
+    kl_annealing_epochs: null
+    kl_weight: null
+
+class_weighting: null # decide after inspecting the class distribution (Phase 1)
+
+checkpoint:
+  monitor: null
+  save_last: true
+
+logging:
+  level: INFO
+  log_every_n_steps: null
