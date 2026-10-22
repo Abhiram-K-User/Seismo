@@ -1,12 +1,14 @@
 """Training and evaluation loop (Phase 3).
 
 Trains models using AdamW, cosine scheduling, early stopping, and tracks
-classification and loss metrics. Saves model checkpoints and execution metadata.
+classification and loss metrics with interactive progress bars. Saves model
+checkpoints, training history, and execution metadata.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -15,6 +17,7 @@ import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 
 from seismic_ml.evaluation.classification import compute_classification_metrics, confusion_matrix
 from seismic_ml.training.losses import cross_entropy_loss
@@ -81,13 +84,16 @@ class Trainer:
         else:
             self.class_weights = None
 
-    def train_epoch(self, loader: DataLoader) -> dict[str, float]:
+    def train_epoch(self, loader: DataLoader, *, pbar: Any = None) -> dict[str, float]:
         """Run one training epoch; return aggregated metrics."""
         self.model.train()
         total_loss = 0.0
         all_preds: list[int] = []
         all_targets: list[int] = []
         num_batches = 0
+        correct_count = 0
+        sample_count = 0
+        epoch_start = time.time()
 
         for batch in loader:
             waveforms = batch.waveforms.to(self.device)
@@ -97,6 +103,8 @@ class Trainer:
             # Filter out unlabeled/OOD samples if present (label == -1)
             valid_mask = labels >= 0
             if not valid_mask.any():
+                if pbar is not None:
+                    pbar.update(1)
                 continue
 
             waveforms = waveforms[valid_mask]
@@ -109,11 +117,26 @@ class Trainer:
             loss.backward()
             self.optimizer.step()
 
-            total_loss += float(loss.item())
+            batch_loss = float(loss.item())
+            total_loss += batch_loss
             preds = torch.argmax(logits, dim=-1)
-            all_preds.extend(preds.detach().cpu().numpy().tolist())
-            all_targets.extend(labels.detach().cpu().numpy().tolist())
+            preds_np = preds.detach().cpu().numpy()
+            targets_np = labels.detach().cpu().numpy()
+
+            all_preds.extend(preds_np.tolist())
+            all_targets.extend(targets_np.tolist())
+            correct_count += int((preds_np == targets_np).sum())
+            sample_count += len(targets_np)
             num_batches += 1
+
+            if pbar is not None:
+                pbar.update(1)
+                step_ms = int(((time.time() - epoch_start) / max(num_batches, 1)) * 1000)
+                running_acc = correct_count / max(sample_count, 1)
+                running_loss = total_loss / max(num_batches, 1)
+                pbar.set_postfix_str(
+                    f"{step_ms}ms/step - accuracy: {running_acc:.4f} - loss: {running_loss:.4f}"
+                )
 
         if self.scheduler is not None:
             self.scheduler.step()
@@ -124,7 +147,7 @@ class Trainer:
         metrics["loss"] = total_loss / max(num_batches, 1)
         return metrics
 
-    def evaluate(self, loader: DataLoader) -> dict[str, float]:
+    def evaluate(self, loader: DataLoader) -> dict[str, Any]:
         """Evaluate on a loader without updating weights."""
         self.model.eval()
         total_loss = 0.0
@@ -175,8 +198,21 @@ class Trainer:
         best_val_score = -float("inf") if "f1" in monitor or "acc" in monitor else float("inf")
         patience_counter = 0
 
+        total_batches = len(train_loader)
+
         for epoch in range(1, max_epochs + 1):
-            train_metrics = self.train_epoch(train_loader)
+            print(f"Epoch {epoch}/{max_epochs}")
+            epoch_start = time.time()
+
+            pbar = tqdm(
+                total=total_batches,
+                unit="step",
+                leave=True,
+                dynamic_ncols=True,
+                bar_format="{n_fmt}/{total_fmt} ━{bar:20}━ {elapsed} {postfix}",
+            )
+
+            train_metrics = self.train_epoch(train_loader, pbar=pbar)
             epoch_data: dict[str, Any] = {"epoch": epoch, "train": train_metrics}
 
             if val_loader is not None:
@@ -184,7 +220,18 @@ class Trainer:
                 epoch_data["val"] = val_metrics
                 score = val_metrics.get(monitor, val_metrics.get("macro_f1", 0.0))
 
-                is_better = (score > best_val_score) if ("f1" in monitor or "acc" in monitor) else (score < best_val_score)
+                ms_per_step = int(((time.time() - epoch_start) / max(total_batches, 1)) * 1000)
+                pbar.set_postfix_str(
+                    f"{ms_per_step}ms/step - accuracy: {train_metrics['accuracy']:.4f} - "
+                    f"loss: {train_metrics['loss']:.4f} - val_accuracy: {val_metrics['accuracy']:.4f} - "
+                    f"val_loss: {val_metrics['loss']:.4f}"
+                )
+
+                is_better = (
+                    (score > best_val_score)
+                    if ("f1" in monitor or "acc" in monitor)
+                    else (score < best_val_score)
+                )
                 if is_better:
                     best_val_score = score
                     patience_counter = 0
@@ -192,9 +239,12 @@ class Trainer:
                         self.save_checkpoint(self.output_dir / "best_model.pt")
                 else:
                     patience_counter += 1
-                    if patience_counter >= patience:
-                        logger.info("Early stopping triggered at epoch %d", epoch)
-                        break
+
+            pbar.close()
+
+            if val_loader is not None and patience_counter >= patience:
+                print(f"Early stopping triggered at epoch {epoch} (no improvement in {patience} epochs).")
+                break
 
             history.append(epoch_data)
 

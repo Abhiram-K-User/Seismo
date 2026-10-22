@@ -37,6 +37,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=None, help="Override max epochs.")
     parser.add_argument("--batch-size", type=int, default=None, help="Override batch size.")
     parser.add_argument("--lr", type=float, default=None, help="Override learning rate.")
+    parser.add_argument("--clean", action="store_true", help="Remove existing output directory before starting fresh.")
     return parser.parse_args(argv)
 
 
@@ -141,6 +142,10 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     run_output_dir = paths.output_root / "baseline1_cnn"
+    if args.clean and run_output_dir.exists():
+        import shutil
+        shutil.rmtree(run_output_dir)
+        logger.info("Cleaned previous output directory: %s", run_output_dir)
     run_output_dir.mkdir(parents=True, exist_ok=True)
 
     trainer = Trainer(

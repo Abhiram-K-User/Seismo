@@ -18,6 +18,8 @@ dependencies = [
     "h5py>=3.9",       # Phase 1: SeisBench-layout HDF5 waveforms (PNW dataset)
     "pandas>=2.0",     # Phase 1: metadata catalogues
     "scipy>=1.11",     # Phase 2: Butterworth band-pass, zero-phase filtering, polyphase resampling
+    "scikit-learn>=1.3", # Phase 3: evaluation metrics
+    "tqdm>=4.65",        # Phase 3: training progress bars
 ]
 
 [project.optional-dependencies]
