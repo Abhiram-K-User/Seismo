@@ -117,12 +117,14 @@ class CNNBaseline(nn.Module):
         self,
         waveforms: torch.Tensor,
         station_mask: torch.Tensor | None = None,
+        **kwargs: object,
     ) -> torch.Tensor:
         """Forward pass.
 
         Args:
             waveforms: [B, N, C, T] float tensor.
             station_mask: [B, N] bool tensor (optional).
+            **kwargs: Extra arguments ignored by CNNBaseline (e.g. coordinates).
 
         Returns:
             Logits [B, num_classes].

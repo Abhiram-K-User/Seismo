@@ -1,7 +1,7 @@
-"""Evaluate a trained model checkpoint on validation or test splits (Phase 3).
+"""Evaluate a trained model checkpoint on validation or test splits (Phase 3 & Phase 6).
 
 Usage:
-    python scripts/evaluate.py --checkpoint outputs/baseline1_cnn/best_model.pt [--split test]
+    python scripts/evaluate.py --checkpoint outputs/baseline3_gat/best_model.pt [--split test]
 """
 
 from __future__ import annotations
@@ -11,6 +11,9 @@ import json
 import sys
 from pathlib import Path
 
+# Ensure src/ is importable even without editable install
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 import torch
 
 from seismic_ml.config import load_config
@@ -19,6 +22,7 @@ from seismic_ml.data.processed import ProcessedEventDataset
 from seismic_ml.data.splits import load_split_table
 from seismic_ml.features.cnn_encoder import CNNEncoder
 from seismic_ml.models.cnn import CNNBaseline
+from seismic_ml.models.gat import GAT, GATClassifier
 from seismic_ml.paths import project_root_from_config, resolve_paths
 from seismic_ml.training.trainer import Trainer
 from seismic_ml.utils.logging import configure_logging
@@ -30,6 +34,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="Entry config file.")
     parser.add_argument("--checkpoint", type=Path, required=True, help="Model checkpoint path.")
+    parser.add_argument("--model", choices=["auto", "cnn", "gat"], default="auto", help="Model type ('auto', 'cnn', 'gat').")
     parser.add_argument("--data-root", default=None, help="Data root directory.")
     parser.add_argument("--output-root", default=None, help="Output root directory.")
     parser.add_argument("--split", default="test", choices=["train", "val", "test", "ood"], help="Split to evaluate on.")
@@ -92,15 +97,54 @@ def main(argv: list[str] | None = None) -> int:
         allow_unlabeled=(args.split == "ood"),
     )
 
-    # Instantiate model
+    # Determine model architecture
     model_cfg = config.get("model", {})
     encoder_cfg = model_cfg.get("encoder", {})
     embedding_dim = int(encoder_cfg.get("embedding_dim") or 128)
     in_channels = int(encoder_cfg.get("in_channels") or 3)
-    station_pooling = model_cfg.get("station_pooling") or "mean"
+    station_pooling = model_cfg.get("station_pooling") or "attention"
 
     encoder = CNNEncoder(embedding_dim=embedding_dim, in_channels=in_channels, pool_time=True)
-    model = CNNBaseline(encoder=encoder, num_classes=len(class_names), station_pooling=station_pooling)
+
+    ckpt_str = str(args.checkpoint).lower()
+    if args.model == "auto":
+        is_gat = "gat" in ckpt_str or bool(model_cfg.get("gat", {}).get("enabled", False))
+    else:
+        is_gat = (args.model == "gat")
+
+    if is_gat:
+        gat_cfg = model_cfg.get("gat", {})
+        graph_cfg = model_cfg.get("graph", {})
+        spatial_cfg = graph_cfg.get("spatial", {})
+        hidden_dim = int(gat_cfg.get("hidden_dim") or 128)
+        num_heads = int(gat_cfg.get("num_heads") or 4)
+        num_layers = int(gat_cfg.get("num_layers") or 2)
+        dropout = float(gat_cfg.get("dropout") or 0.1)
+
+        gat = GAT(
+            in_dim=embedding_dim,
+            hidden_dim=hidden_dim,
+            out_dim=hidden_dim,
+            num_heads=num_heads,
+            num_layers=num_layers,
+            dropout=dropout,
+        )
+        model = GATClassifier(
+            encoder=encoder,
+            gat=gat,
+            num_classes=len(class_names),
+            station_pooling=station_pooling,
+            graph_method=spatial_cfg.get("method") or "knn",
+            k_neighbors=int(spatial_cfg.get("k_neighbors") or 5),
+            radius_km=spatial_cfg.get("radius_km"),
+            sigma_km=spatial_cfg.get("sigma_km"),
+        )
+    else:
+        model = CNNBaseline(
+            encoder=encoder,
+            num_classes=len(class_names),
+            station_pooling=station_pooling,
+        )
 
     trainer = Trainer(
         model=model,
@@ -132,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
         cm = np.array(metrics.get("confusion_matrix", []))
         if cm.size > 0:
             cm_fig = plot_confusion_matrix(cm, class_names)
-            out_dir = paths.output_root / "baseline1_cnn"
+            out_dir = args.checkpoint.parent
             out_dir.mkdir(parents=True, exist_ok=True)
             cm_path = out_dir / f"confusion_matrix_{args.split}.png"
             cm_fig.savefig(cm_path, dpi=200, bbox_inches="tight")

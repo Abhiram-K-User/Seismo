@@ -100,6 +100,8 @@ class Trainer:
             station_mask = batch.station_mask.to(self.device)
             labels = batch.labels.to(self.device)
 
+            coordinates = batch.coordinates.to(self.device) if batch.coordinates is not None else None
+
             # Filter out unlabeled/OOD samples if present (label == -1)
             valid_mask = labels >= 0
             if not valid_mask.any():
@@ -110,9 +112,11 @@ class Trainer:
             waveforms = waveforms[valid_mask]
             station_mask = station_mask[valid_mask]
             labels = labels[valid_mask]
+            if coordinates is not None:
+                coordinates = coordinates[valid_mask]
 
             self.optimizer.zero_grad()
-            logits = self.model(waveforms, station_mask=station_mask)
+            logits = self.model(waveforms, station_mask=station_mask, coordinates=coordinates)
             loss = cross_entropy_loss(logits, labels, class_weights=self.class_weights)
             loss.backward()
             self.optimizer.step()
@@ -160,6 +164,7 @@ class Trainer:
                 waveforms = batch.waveforms.to(self.device)
                 station_mask = batch.station_mask.to(self.device)
                 labels = batch.labels.to(self.device)
+                coordinates = batch.coordinates.to(self.device) if batch.coordinates is not None else None
 
                 valid_mask = labels >= 0
                 if not valid_mask.any():
@@ -168,8 +173,10 @@ class Trainer:
                 waveforms = waveforms[valid_mask]
                 station_mask = station_mask[valid_mask]
                 labels = labels[valid_mask]
+                if coordinates is not None:
+                    coordinates = coordinates[valid_mask]
 
-                logits = self.model(waveforms, station_mask=station_mask)
+                logits = self.model(waveforms, station_mask=station_mask, coordinates=coordinates)
                 loss = cross_entropy_loss(logits, labels, class_weights=self.class_weights)
 
                 total_loss += float(loss.item())

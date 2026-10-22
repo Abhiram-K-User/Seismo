@@ -83,16 +83,31 @@ def test_validation_helpers() -> None:
 
 def test_visualization_later_phase_placeholders() -> None:
     from seismic_ml.placeholders import NotYetImplementedError
-    from seismic_ml.utils.visualization import plot_attention_weights, plot_reliability_diagram
+    from seismic_ml.utils.visualization import plot_reliability_diagram
 
     calls = [
-        (6, lambda: plot_attention_weights(torch.zeros(2, 2), ["A.B", "C.D"])),
         (9, lambda: plot_reliability_diagram(np.zeros(3), np.zeros(3), np.zeros(3))),
     ]
     for phase, call in calls:
         with pytest.raises(NotYetImplementedError) as info:
             call()
         assert info.value.phase == phase
+
+
+def test_plot_attention_weights() -> None:
+    from seismic_ml.utils.visualization import plot_attention_weights
+
+    # Test 2D attention
+    attn_2d = torch.softmax(torch.randn(3, 3), dim=-1)
+    fig_2d = plot_attention_weights(attn_2d, ["STA1", "STA2", "STA3"])
+    assert fig_2d is not None
+    assert len(fig_2d.axes) >= 1
+
+    # Test 3D multi-head attention [H, N, N]
+    attn_3d = torch.softmax(torch.randn(4, 3, 3), dim=-1)
+    fig_3d = plot_attention_weights(attn_3d, ["STA1", "STA2", "STA3"])
+    assert fig_3d is not None
+    assert len(fig_3d.axes) >= 4  # 4 head axes (+ optional colorbar)
 
 
 def test_plot_event_waveforms_and_station_map(toy_raw_dir, data_config) -> None:

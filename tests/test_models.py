@@ -7,7 +7,7 @@ import torch
 from torch import nn
 
 from seismic_ml.features import CNNEncoder
-from seismic_ml.models import STGNN, CNNBaseline, EvidentialClassifier, GAT
+from seismic_ml.models import STGNN, CNNBaseline, EvidentialClassifier, GAT, GATClassifier
 from seismic_ml.placeholders import NotYetImplementedError
 
 B, N, C, T, D = 2, 4, 3, 100, 16
@@ -103,12 +103,63 @@ def test_cnn_baseline_forward(pooling: str) -> None:
 # --- GAT ---------------------------------------------------------------------
 
 
-def test_gat_instantiation_and_placeholder() -> None:
+def test_gat_instantiation() -> None:
     gat = GAT(D, 32, 8, num_heads=4, num_layers=2, dropout=0.1)
     assert (gat.num_heads, gat.num_layers, gat.dropout) == (4, 2, 0.1)
-    with pytest.raises(NotYetImplementedError) as info:
-        gat(torch.zeros(B, N, D), torch.ones(B, N, N), return_attention=True)
-    assert info.value.phase == 6
+
+
+def test_gat_forward() -> None:
+    gat = GAT(D, 32, 8, num_heads=4, num_layers=2, dropout=0.1)
+    x = torch.randn(B, N, D)
+    mask = torch.ones(B, N, dtype=torch.bool)
+    mask[:, -1] = False
+    adj = torch.ones(B, N, N)
+
+    out = gat(x, adjacency=adj, station_mask=mask, return_attention=True)
+    assert out.node_embeddings.shape == (B, N, 8)
+    assert torch.all(out.node_embeddings[:, -1] == 0.0)  # Padded station is strictly zero
+    assert not torch.all(out.node_embeddings[:, 0] == 0.0)
+    assert out.attention_weights is not None
+    assert len(out.attention_weights) == 2  # 2 layers
+    assert out.attention_weights[0].shape == (B, 4, N, N)
+
+    # Test gradient backward
+    loss = out.node_embeddings.sum()
+    loss.backward()
+    assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in gat.parameters())
+
+
+def test_gat_classifier_forward() -> None:
+    encoder = CNNEncoder(embedding_dim=D)
+    gat = GAT(D, 32, 32, num_heads=4, num_layers=2, dropout=0.1)
+    model = GATClassifier(
+        encoder=encoder,
+        gat=gat,
+        num_classes=2,
+        station_pooling="attention",
+        graph_method="knn",
+        k_neighbors=2,
+    )
+
+    waveforms = torch.randn(B, N, C, T)
+    coords = torch.tensor([[[47.0, -122.0], [47.1, -122.1], [47.2, -122.2], [47.3, -122.3]],
+                           [[47.0, -122.0], [47.1, -122.1], [47.2, -122.2], [47.3, -122.3]]])
+    mask = torch.ones(B, N, dtype=torch.bool)
+    mask[:, -1] = False
+
+    logits = model(waveforms, station_mask=mask, coordinates=coords)
+    assert logits.shape == (B, 2)
+    assert torch.isfinite(logits).all()
+
+    # Test return_attention
+    logits_with_attn, attn = model(waveforms, station_mask=mask, coordinates=coords, return_attention=True)
+    assert logits_with_attn.shape == (B, 2)
+    assert attn is not None and len(attn) == 2
+
+    # Test gradient flow
+    loss = logits.sum()
+    loss.backward()
+    assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in model.parameters())
 
 
 @pytest.mark.parametrize("dropout", [-0.1, 1.0])

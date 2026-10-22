@@ -1,7 +1,7 @@
-"""Train Baseline 1 (CNN + Softmax) on the preprocessed seismic dataset (Phase 3).
+"""Train Baseline 1 (CNN) or Baseline 3 (CNN + GATv2) on preprocessed seismic data.
 
 Usage:
-    python scripts/train.py [--config configs/config.yaml] [--data-root PATH] [--epochs N]
+    python scripts/train.py [--model {cnn,gat}] [--config configs/config.yaml] [--data-root PATH]
 """
 
 from __future__ import annotations
@@ -10,6 +10,9 @@ import argparse
 import json
 import sys
 from pathlib import Path
+
+# Ensure src/ is importable even without editable install
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import numpy as np
 import torch
@@ -20,6 +23,7 @@ from seismic_ml.data.processed import ProcessedEventDataset
 from seismic_ml.data.splits import load_split_table
 from seismic_ml.features.cnn_encoder import CNNEncoder
 from seismic_ml.models.cnn import CNNBaseline
+from seismic_ml.models.gat import GAT, GATClassifier
 from seismic_ml.paths import project_root_from_config, resolve_paths
 from seismic_ml.training.trainer import Trainer
 from seismic_ml.utils.logging import configure_logging
@@ -31,6 +35,7 @@ DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "config.yaml"
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="Entry config file.")
+    parser.add_argument("--model", choices=["cnn", "gat"], default="gat", help="Model architecture: 'cnn' (Baseline 1) or 'gat' (Baseline 3, GATv2). Default: 'gat'.")
     parser.add_argument("--data-root", default=None, help="Data root directory.")
     parser.add_argument("--output-root", default=None, help="Output root directory.")
     parser.add_argument("--device", default=None, help="Device to use ('cpu', 'cuda', 'auto').")
@@ -127,25 +132,65 @@ def main(argv: list[str] | None = None) -> int:
         seed=seed,
     )
 
-    # Build model (Baseline 1: 1D CNN + Softmax)
+    # Model architecture selection
     model_cfg = config.get("model", {})
     encoder_cfg = model_cfg.get("encoder", {})
     embedding_dim = int(encoder_cfg.get("embedding_dim") or 128)
     in_channels = int(encoder_cfg.get("in_channels") or 3)
-    station_pooling = model_cfg.get("station_pooling") or "mean"
+    station_pooling = model_cfg.get("station_pooling") or "attention"
 
     encoder = CNNEncoder(
         embedding_dim=embedding_dim,
         in_channels=in_channels,
         pool_time=True,
     )
-    model = CNNBaseline(
-        encoder=encoder,
-        num_classes=len(class_names),
-        station_pooling=station_pooling,
-    )
 
-    run_output_dir = paths.output_root / "baseline1_cnn"
+    selected_model = args.model
+
+    if selected_model == "gat":
+        gat_cfg = model_cfg.get("gat", {})
+        graph_cfg = model_cfg.get("graph", {})
+        spatial_cfg = graph_cfg.get("spatial", {})
+        hidden_dim = int(gat_cfg.get("hidden_dim") or 128)
+        num_heads = int(gat_cfg.get("num_heads") or 4)
+        num_layers = int(gat_cfg.get("num_layers") or 2)
+        dropout = float(gat_cfg.get("dropout") or 0.1)
+
+        gat = GAT(
+            in_dim=embedding_dim,
+            hidden_dim=hidden_dim,
+            out_dim=hidden_dim,
+            num_heads=num_heads,
+            num_layers=num_layers,
+            dropout=dropout,
+        )
+        model = GATClassifier(
+            encoder=encoder,
+            gat=gat,
+            num_classes=len(class_names),
+            station_pooling=station_pooling,
+            graph_method=spatial_cfg.get("method") or "knn",
+            k_neighbors=int(spatial_cfg.get("k_neighbors") or 5),
+            radius_km=spatial_cfg.get("radius_km"),
+            sigma_km=spatial_cfg.get("sigma_km"),
+        )
+        run_name = "baseline3_gat"
+        logger.info(
+            "Starting training Baseline 3 (CNN + GATv2 [%d layers, %d heads] + %s pooling)...",
+            num_layers,
+            num_heads,
+            station_pooling,
+        )
+    else:
+        model = CNNBaseline(
+            encoder=encoder,
+            num_classes=len(class_names),
+            station_pooling=station_pooling,
+        )
+        run_name = "baseline1_cnn"
+        logger.info("Starting training Baseline 1 (CNN + %s pooling)...", station_pooling)
+
+    run_output_dir = paths.output_root / run_name
     if args.clean and run_output_dir.exists():
         import shutil
         shutil.rmtree(run_output_dir)
@@ -160,7 +205,6 @@ def main(argv: list[str] | None = None) -> int:
         class_names=class_names,
     )
 
-    logger.info("Starting training Baseline 1 (CNN + %s pooling)...", station_pooling)
     results = trainer.fit(train_loader, val_loader)
 
     # Save metrics JSON
@@ -170,7 +214,11 @@ def main(argv: list[str] | None = None) -> int:
 
     # Save training curves and confusion matrix plots for project reports
     try:
-        from seismic_ml.utils.visualization import plot_confusion_matrix, plot_training_history
+        from seismic_ml.utils.visualization import (
+            plot_attention_weights,
+            plot_confusion_matrix,
+            plot_training_history,
+        )
         import matplotlib.pyplot as plt
 
         history_fig = plot_training_history(results["history"])
@@ -190,6 +238,30 @@ def main(argv: list[str] | None = None) -> int:
             cm_fig.savefig(cm_path, dpi=200, bbox_inches="tight")
             plt.close(cm_fig)
             logger.info("Saved validation confusion matrix graph to %s", cm_path)
+
+        # If GAT, save an attention weights visualization from the validation set
+        if selected_model == "gat":
+            model.eval()
+            for sample_batch in val_loader:
+                wfs = sample_batch.waveforms.to(device)
+                s_mask = sample_batch.station_mask.to(device)
+                coords = sample_batch.coordinates.to(device) if sample_batch.coordinates is not None else None
+                with torch.no_grad():
+                    _, attn_tuple = model(wfs, station_mask=s_mask, coordinates=coords, return_attention=True)
+                if attn_tuple is not None and len(attn_tuple) > 0:
+                    # Take first layer, first sample in batch: [H, N, N]
+                    layer1_attn = attn_tuple[0][0]  # [H, N, N]
+                    # Filter real station labels for sample 0
+                    sample0_stations = [s for s, m in zip(sample_batch.station_ids[0], sample_batch.station_mask[0].tolist()) if m]
+                    num_real = len(sample0_stations)
+                    if num_real > 1:
+                        sub_attn = layer1_attn[:, :num_real, :num_real]
+                        attn_fig = plot_attention_weights(sub_attn, sample0_stations)
+                        attn_path = run_output_dir / "station_attention_weights.png"
+                        attn_fig.savefig(attn_path, dpi=200, bbox_inches="tight")
+                        plt.close(attn_fig)
+                        logger.info("Saved station attention graph to %s", attn_path)
+                break
     except Exception as exc:
         logger.warning("Could not generate report plots: %s", exc)
 

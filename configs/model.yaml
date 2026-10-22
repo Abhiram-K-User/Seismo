@@ -1,5 +1,6 @@
 # Model configuration.
 # Baseline 1 (Phase 3): 1D CNN waveform encoder + mean station pooling + softmax head.
+# Baseline 3 (Phase 6): 1D CNN encoder + GATv2 spatial graph attention + attention pooling + softmax head.
 
 num_classes: 2
 
@@ -9,29 +10,28 @@ encoder:                          # Stage A — Phase 3 (waveform), Phase 4 (spe
   input_representation: waveform  # waveform | spectrogram
   embedding_dim: 128
 
-station_pooling: mean             # mean | max | attention (non-graph baselines, Phase 3)
+station_pooling: attention        # mean | max | attention
 
 graph:                            # Stage B — Phase 5 (static), Phase 7 (dynamic)
   enabled: false
-  type: null                      # e.g. spatial | waveform_similarity | dynamic
+  type: spatial                   # spatial | waveform_similarity | dynamic
   spatial:
-    method: null
-    k_neighbors: null
-    radius_km: null
-    sigma_km: null
+    method: knn                   # knn | radius | gaussian_kernel | fully_connected
+    k_neighbors: 5
+    radius_km: 150.0
+    sigma_km: 50.0
   waveform_similarity:
-    method: null
-    max_lag_s: null
-  # Conceptual combination A_ij = alpha * geo_ij + beta * wave_ij (not final)
-  alpha: null
-  beta: null
+    method: cosine                # cosine | xcorr
+    max_lag_s: 2.0
+  alpha: 1.0
+  beta: 0.0
 
 gat:                              # Stage C — Phase 6
   enabled: false
-  hidden_dim: null
-  num_heads: null
-  num_layers: null
-  dropout: null
+  hidden_dim: 128
+  num_heads: 4
+  num_layers: 2
+  dropout: 0.1
 
 stgnn:                            # Stage D — Phase 7
   enabled: false

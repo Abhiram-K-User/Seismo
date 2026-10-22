@@ -130,9 +130,49 @@ def plot_attention_weights(
         attention: ``[N, N]`` (or ``[H, N, N]`` per head) attention matrix.
         station_ids: Station labels for the axes, length ``N``.
 
-    TODO(Phase 6): implement with the GAT.
+    Returns:
+        matplotlib Figure object.
     """
-    raise NotYetImplementedError("plot_attention_weights", phase=6)
+    plt = _pyplot()
+    attn_np = attention.detach().cpu().numpy() if isinstance(attention, torch.Tensor) else np.array(attention)
+
+    if attn_np.ndim == 2:
+        fig, ax = plt.subplots(figsize=(6, 5))
+        im = ax.imshow(attn_np, cmap="viridis", vmin=0.0, vmax=max(float(attn_np.max()), 1e-3))
+        ax.set_xticks(range(len(station_ids)))
+        ax.set_yticks(range(len(station_ids)))
+        ax.set_xticklabels(station_ids, rotation=45, ha="right", fontsize=9)
+        ax.set_yticklabels(station_ids, fontsize=9)
+        ax.set_xlabel("Sender Station", fontsize=10, fontweight="bold")
+        ax.set_ylabel("Receiver Station", fontsize=10, fontweight="bold")
+        ax.set_title("Station Graph Attention Weights (GATv2)", fontsize=11, fontweight="bold")
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="Attention Weight")
+        fig.tight_layout()
+        return fig
+
+    if attn_np.ndim == 3:
+        h, n, _ = attn_np.shape
+        fig, axes = plt.subplots(1, h, figsize=(4.5 * h, 4.2), squeeze=False)
+        vmax = max(float(attn_np.max()), 1e-3)
+        im = None
+        for i in range(h):
+            ax = axes[0, i]
+            im = ax.imshow(attn_np[i], cmap="viridis", vmin=0.0, vmax=vmax)
+            ax.set_xticks(range(len(station_ids)))
+            ax.set_yticks(range(len(station_ids)))
+            ax.set_xticklabels(station_ids, rotation=45, ha="right", fontsize=8)
+            ax.set_yticklabels(station_ids, fontsize=8)
+            ax.set_title(f"Head {i + 1}", fontsize=10, fontweight="bold")
+            if i == 0:
+                ax.set_ylabel("Receiver Station", fontsize=9)
+            ax.set_xlabel("Sender Station", fontsize=9)
+        fig.tight_layout()
+        if im is not None:
+            fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.02, pad=0.03, label="Attention Weight")
+        fig.suptitle("Multi-Head Graph Attention Weights (GATv2)", fontsize=12, fontweight="bold")
+        return fig
+
+    raise ValueError(f"attention must be 2D [N, N] or 3D [H, N, N], got shape {attn_np.shape}")
 
 
 def plot_training_history(history: Sequence[dict[str, Any]]) -> Any:
