@@ -34,14 +34,16 @@ def _assert_placeholder(call, phase: int) -> None:
     assert info.value.phase == phase
 
 
-def test_trainer_instantiation_and_placeholders() -> None:
-    trainer = Trainer(nn.Linear(2, 2), config={"seed": 42})
+def test_trainer_instantiation_and_save_load(tmp_path) -> None:
+    model = nn.Linear(2, 2)
+    trainer = Trainer(model, config={"seed": 42}, output_dir=tmp_path)
     assert trainer.device == torch.device("cpu")
-    assert trainer.output_dir is None
-    for method in (trainer.fit, trainer.train_epoch, trainer.evaluate):
-        _assert_placeholder(lambda m=method: m(None), phase=3)
-    _assert_placeholder(lambda: trainer.save_checkpoint("x.pt"), phase=3)
-    _assert_placeholder(lambda: trainer.load_checkpoint("x.pt"), phase=3)
+    assert trainer.output_dir == tmp_path
+
+    ckpt_path = tmp_path / "model.pt"
+    trainer.save_checkpoint(ckpt_path)
+    assert ckpt_path.exists()
+    trainer.load_checkpoint(ckpt_path)
 
 
 def test_trainer_requires_module() -> None:
@@ -49,10 +51,17 @@ def test_trainer_requires_module() -> None:
         Trainer(object(), config={})  # type: ignore[arg-type]
 
 
+def test_cross_entropy_loss() -> None:
+    logits = torch.tensor([[2.0, 0.5], [0.1, 1.8]])
+    targets = torch.tensor([0, 1])
+    loss = cross_entropy_loss(logits, targets)
+    assert loss.ndim == 0
+    assert loss.item() > 0
+
+
 def test_losses_are_placeholders() -> None:
     logits = torch.zeros(4, 2)
     targets = torch.zeros(4, dtype=torch.long)
-    _assert_placeholder(lambda: cross_entropy_loss(logits, targets), phase=3)
     _assert_placeholder(
         lambda: evidential_loss(logits, targets, variant="mse", regularization_weight=0.0), phase=8
     )
@@ -60,12 +69,22 @@ def test_losses_are_placeholders() -> None:
     _assert_placeholder(lambda: annealing_coefficient(1, 10), phase=8)
 
 
-def test_classification_metrics_are_placeholders() -> None:
-    y = np.zeros(4, dtype=int)
-    _assert_placeholder(
-        lambda: compute_classification_metrics(y, y, ["earthquake", "anthropogenic"]), phase=3
-    )
-    _assert_placeholder(lambda: confusion_matrix(y, y, 2), phase=3)
+def test_classification_metrics() -> None:
+    y_true = np.array([0, 1, 0, 1, 0])
+    y_pred = np.array([0, 1, 1, 1, 0])
+    class_names = ["earthquake", "anthropogenic"]
+
+    metrics = compute_classification_metrics(y_true, y_pred, class_names)
+    assert metrics["accuracy"] == 0.8
+    assert "macro_f1" in metrics
+    assert "precision/earthquake" in metrics
+    assert "recall/anthropogenic" in metrics
+
+    cm = confusion_matrix(y_true, y_pred, 2)
+    assert cm.shape == (2, 2)
+    assert cm[0, 0] == 2  # true 0, pred 0
+    assert cm[0, 1] == 1  # true 0, pred 1
+    assert cm[1, 1] == 2  # true 1, pred 1
 
 
 def test_calibration_and_ood_metrics_are_placeholders() -> None:

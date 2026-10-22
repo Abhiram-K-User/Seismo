@@ -1,9 +1,9 @@
 # Uncertainty-Aware Spatio-Temporal GNN for Seismic Event Classification
 
-> **Status: Phase 2 (waveform preprocessing) complete.**
+> **Status: Phase 3 (CNN baseline) implemented.**
 > The dataset is selected and characterised, the leakage-aware train/val/test
-> split is built, and a data-justified preprocessing pipeline produces
-> model-ready batches. No model, training run or experimental result exists yet.
+> split is built, and Baseline 1 (1D Dilated Residual CNN / TCN with station pooling and Softmax)
+> is fully implemented with PyTorch DataLoader, Trainer, and classification metrics.
 
 ## Motivation
 
@@ -66,9 +66,12 @@ Multi-station 3-channel waveforms
 | Preprocessing (1–16 Hz, P-aligned 60 s @ 50 Hz, station normalisation), channel masks | ✅ Phase 2 |
 | S1 temporal split (all 51,711 events), processed store, `collate_events` → `EventBatch` | ✅ Phase 2 |
 | Preprocessing justification notebook (`notebooks/02_waveform_analysis.ipynb`) | ✅ Phase 2 |
-| DataLoader, training-scale waveform download | ❌ Phase 3 |
-| CNN encoder, GAT, STGNN, EDL head, graph construction | ❌ interfaces only |
-| Training, evaluation, OOD metrics | ❌ interfaces only |
+| DataLoader (`create_dataloader`), training pipeline, Trainer | ✅ Phase 3 |
+| CNN encoder (`CNNEncoder`), Baseline 1 (`CNNBaseline`) | ✅ Phase 3 |
+| Training & evaluation entry points (`scripts/train.py`, `scripts/evaluate.py`) | ✅ Phase 3 |
+| Classification metrics (`accuracy`, `macro_f1`, `confusion_matrix`) | ✅ Phase 3 |
+| GAT, STGNN, EDL head, graph construction | ❌ interfaces only |
+| OOD metrics, evidential loss | ❌ interfaces only |
 
 Unimplemented interfaces raise `NotYetImplementedError`, which names the
 phase in which they are planned.
@@ -80,7 +83,7 @@ configs/            YAML configuration (config.yaml entry + data/model/training)
 data/               default data root: raw/ interim/ processed/ (never committed)
 notebooks/          exploration notebooks
 scripts/            download_data.py, inspect_data.py (Phase 1); prepare_data.py (Phase 2);
-                    train.py, evaluate.py (placeholders)
+                    train.py, evaluate.py (Phase 3); run_notebooks.py
 src/seismic_ml/     package: paths, data, preprocessing, features, graph, models,
                     uncertainty, training, evaluation, utils
 tests/              pytest suite (toy fixtures only; no real data needed)
@@ -96,7 +99,7 @@ PROJECT_CONTEXT.md  full project context, rules, decisions and state
 | 0 | Project initialization ✅ |
 | 1 | Dataset selection + data exploration ✅ |
 | 2 | Waveform preprocessing ✅ |
-| 3 | CNN baseline |
+| 3 | CNN baseline ✅ |
 | 4 | Time-frequency experiments |
 | 5 | Spatial graph construction |
 | 6 | GAT |

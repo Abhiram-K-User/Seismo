@@ -1833,7 +1833,7 @@ Status: Active
 ## CURRENT PROJECT STATE
 
 Current Phase:
-Phase 2 — Waveform Preprocessing (COMPLETE, 2026-09-19)
+Phase 3 — CNN Baseline (COMPLETE, 2026-10-22)
 
 Completed:
 Phase 0
@@ -1856,35 +1856,35 @@ Phase 2
 - Processed outputs for the local subsets verified (P at sample 500 in every window,
   no NaN, masked components zero, unit std)
 - SciPy dependency (user-approved) — Decision 017
+Phase 3
+- DataLoader: `create_dataloader` implemented with seeded batching and `collate_events`.
+- Station-level 1D Dilated Residual CNN / TCN encoder: `CNNEncoder` implemented with
+  dilations (1, 2, 4, 8), residual connections, dropout, and station-mask zeroing.
+- Baseline 1 Event Classifier: `CNNBaseline` with station pooling ("mean", "max",
+  "attention") and linear head to logits.
+- Losses & Metrics: `cross_entropy_loss`, `compute_classification_metrics`, and `confusion_matrix`.
+- Trainer: `Trainer` implemented with AdamW, Cosine Annealing, early stopping,
+  and checkpoint saving.
+- Runnable Entry Points: `scripts/train.py` and `scripts/evaluate.py`.
+- Baseline configuration in `configs/model.yaml` and `configs/training.yaml`.
 
 In Progress:
 None
 
 Next Phase:
-Phase 3 — CNN Baseline
-(not started; begins only when explicitly requested). Blocking first step:
-decide with the user how to obtain training waveforms — only 872 of 35,807 train
-events are local (options and sizes in §17). Then: create_dataloader, CNNEncoder,
-CNNBaseline, cross-entropy training, classification metrics, shortcut baselines
-(station ID / station count / local hour), seen vs new-site reporting.
+Phase 4 (Spectrogram experiments) / Phase 5 (Spatial Graph Construction)
 
 Not Yet Implemented:
-- training-scale waveform data (only exploration subsets are local)
-- DataLoader (create_dataloader)
-- CNN
-- spectrogram pipeline
-- graph construction
-- GAT
-- STGNN
-- EDL
-- training
-- OOD evaluation
-- final experiments
-- splits S2 (source-site) and S3 (geographic) — designed, planned for Phase 10
+- spectrogram pipeline (Phase 4)
+- graph construction (Phase 5)
+- GATv2 (Phase 6)
+- STGNN (Phase 7)
+- EDL evidential head & Bayes-risk loss (Phase 8)
+- OOD evaluation (Phase 9)
+- final experiments & ablations (Phase 10-11)
 
 Last verification:
-2026-09-19 — `python -m pytest`: 247 passed; notebooks 01 and 02 executed without
-errors via scripts/run_notebooks.py; scripts/prepare_data.py run on the local subsets
+2026-10-22 — `python -m pytest`: 251 passed, 0 failed.
 
 Corrections to earlier phases:
 - The Phase 1 notebook 01 as delivered contained double-encoded (mojibake) text in

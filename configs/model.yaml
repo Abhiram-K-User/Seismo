@@ -1,8 +1,5 @@
 # Model configuration.
-#
-# All architecture hyperparameters are `null`: they are chosen experimentally
-# in the phase that implements each component (see PROJECT_CONTEXT.md §14).
-# `enabled: false` marks components that do not exist yet.
+# Baseline 1 (Phase 3): 1D CNN waveform encoder + mean station pooling + softmax head.
 
 num_classes: 2
 
@@ -10,9 +7,9 @@ encoder:                          # Stage A — Phase 3 (waveform), Phase 4 (spe
   type: cnn
   in_channels: 3
   input_representation: waveform  # waveform | spectrogram
-  embedding_dim: null
+  embedding_dim: 128
 
-station_pooling: null             # mean | max | attention (non-graph baselines, Phase 3)
+station_pooling: mean             # mean | max | attention (non-graph baselines, Phase 3)
 
 graph:                            # Stage B — Phase 5 (static), Phase 7 (dynamic)
   enabled: false
@@ -43,5 +40,5 @@ stgnn:                            # Stage D — Phase 7
   dropout: null
 
 head:                             # Stage E — softmax (Phase 3) / evidential (Phase 8)
-  type: null                      # softmax | evidential
+  type: softmax                   # softmax | evidential
   evidence_activation: null       # relu | softplus | exp (evidential only)

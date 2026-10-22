@@ -86,9 +86,10 @@ def test_phase2_split_parameters(data_config: dict) -> None:
 
 
 def test_later_phase_settings_are_still_open(config: dict) -> None:
-    assert config["model"]["encoder"]["embedding_dim"] is None
-    assert config["training"]["optimizer"]["name"] is None
+    assert config["model"]["encoder"]["embedding_dim"] == 128
+    assert config["training"]["optimizer"]["name"] == "adamw"
     assert config["data"]["spectrogram"]["n_fft"] is None
+    assert config["training"]["loss"]["evidential"]["variant"] is None
 
 
 def test_future_components_are_disabled(config: dict) -> None:

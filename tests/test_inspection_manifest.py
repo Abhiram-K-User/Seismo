@@ -85,7 +85,7 @@ def test_waveform_quality_table(comcat: pd.DataFrame, toy_raw_dir: Path) -> None
     assert len(table) == 8 * 3
     zero = table.groupby("trace_name")["all_zero"].sum()
     flags = comcat.set_index("trace_name")["trace_missing_channel"]
-    assert (zero == flags.loc[zero.index]).all()   # flag agrees with the stored zeros
+    assert (zero.to_numpy() == flags.loc[zero.index].to_numpy()).all()   # flag agrees with the stored zeros
 
 
 def test_manifest_is_measured_portable_and_json(comcat: pd.DataFrame, toy_raw_dir: Path,

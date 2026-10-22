@@ -1,21 +1,26 @@
-"""Evaluate a trained model (classification, calibration, uncertainty, OOD).
-
-Placeholder. Classification evaluation is planned for Phase 3; calibration,
-uncertainty and OOD evaluation for Phase 9. Running this script only
-validates the configuration and exits with status 1.
+"""Evaluate a trained model checkpoint on validation or test splits (Phase 3).
 
 Usage:
-    python scripts/evaluate.py --config configs/config.yaml --checkpoint <path>
+    python scripts/evaluate.py --checkpoint outputs/baseline1_cnn/best_model.pt [--split test]
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
+import torch
+
 from seismic_ml.config import load_config
-from seismic_ml.placeholders import NotYetImplementedError
+from seismic_ml.data.loader import create_dataloader
+from seismic_ml.data.processed import ProcessedEventDataset
+from seismic_ml.data.splits import load_split_table
+from seismic_ml.features.cnn_encoder import CNNEncoder
+from seismic_ml.models.cnn import CNNBaseline
+from seismic_ml.paths import project_root_from_config, resolve_paths
+from seismic_ml.training.trainer import Trainer
 from seismic_ml.utils.logging import configure_logging
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "config.yaml"
@@ -24,17 +29,94 @@ DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "config.yaml"
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="Entry config file.")
-    parser.add_argument("--checkpoint", type=Path, default=None, help="Model checkpoint to evaluate.")
+    parser.add_argument("--checkpoint", type=Path, required=True, help="Model checkpoint path.")
+    parser.add_argument("--data-root", default=None, help="Data root directory.")
+    parser.add_argument("--split", default="test", choices=["train", "val", "test", "ood"], help="Split to evaluate on.")
+    parser.add_argument("--device", default=None, help="Device to use ('cpu', 'cuda', 'auto').")
+    parser.add_argument("--batch-size", type=int, default=16, help="Batch size for evaluation.")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     logger = configure_logging()
-    load_config(args.config)  # fail early on a broken configuration
-    logger.info("Configuration %s loaded.", args.config)
-    logger.error("%s", NotYetImplementedError("scripts/evaluate.py (evaluation pipeline)", phase=3))
-    return 1
+
+    config = load_config(args.config)
+    paths = resolve_paths(
+        config,
+        project_root=project_root_from_config(args.config),
+        data_root=args.data_root,
+    )
+
+    device_arg = args.device or config.get("training", {}).get("device", "auto")
+    if device_arg == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    else:
+        device = device_arg
+    logger.info("Using device: %s", device)
+
+    split_path = paths.processed / "splits" / "s1_temporal" / "events.csv"
+    if not split_path.exists():
+        logger.error("Split table not found at %s.", split_path)
+        return 1
+    split_table = load_split_table(split_path)
+
+    processed_comcat_dir = paths.processed / "pnw" / "comcat"
+    if not processed_comcat_dir.exists():
+        logger.error("Processed data directory not found at %s.", processed_comcat_dir)
+        return 1
+
+    dataset = ProcessedEventDataset(processed_comcat_dir, split_table, splits=[args.split])
+    logger.info("Loaded %d events from split %r", len(dataset), args.split)
+
+    if len(dataset) == 0:
+        logger.error("Dataset has 0 events for split %r", args.split)
+        return 1
+
+    class_names = config.get("data", {}).get("labels", {}).get("class_names") or [
+        "earthquake",
+        "anthropogenic",
+    ]
+
+    loader = create_dataloader(
+        dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        class_names=class_names,
+        allow_unlabeled=(args.split == "ood"),
+    )
+
+    # Instantiate model
+    model_cfg = config.get("model", {})
+    encoder_cfg = model_cfg.get("encoder", {})
+    embedding_dim = int(encoder_cfg.get("embedding_dim") or 128)
+    in_channels = int(encoder_cfg.get("in_channels") or 3)
+    station_pooling = model_cfg.get("station_pooling") or "mean"
+
+    encoder = CNNEncoder(embedding_dim=embedding_dim, in_channels=in_channels, pool_time=True)
+    model = CNNBaseline(encoder=encoder, num_classes=len(class_names), station_pooling=station_pooling)
+
+    trainer = Trainer(
+        model=model,
+        config=config,
+        device=device,
+        class_names=class_names,
+    )
+
+    logger.info("Loading checkpoint from %s ...", args.checkpoint)
+    trainer.load_checkpoint(args.checkpoint)
+
+    logger.info("Evaluating on split %r ...", args.split)
+    metrics = trainer.evaluate(loader)
+
+    print("\n" + "=" * 45)
+    print(f"Evaluation Results on split: {args.split}")
+    print("=" * 45)
+    for k, v in metrics.items():
+        print(f"  {k:25s}: {v:.4f}")
+    print("=" * 45 + "\n")
+
+    return 0
 
 
 if __name__ == "__main__":

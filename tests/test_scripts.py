@@ -35,11 +35,16 @@ def test_script_help(repo_root: Path, script: str) -> None:
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.parametrize("script", PLACEHOLDER_SCRIPTS)
-def test_script_reports_not_implemented(repo_root: Path, script: str) -> None:
-    result = _run(repo_root, f"scripts/{script}", "--config", "configs/config.yaml")
+def test_train_script_requires_prepared_data(repo_root: Path) -> None:
+    result = _run(repo_root, "scripts/train.py", "--config", "configs/config.yaml")
     assert result.returncode == 1
-    assert "not implemented yet" in result.stderr
+    assert "Split table not found" in result.stderr
+
+
+def test_evaluate_script_requires_checkpoint(repo_root: Path) -> None:
+    result = _run(repo_root, "scripts/evaluate.py", "--config", "configs/config.yaml")
+    assert result.returncode != 0
+    assert "--checkpoint" in result.stderr
 
 
 def test_inspect_data_with_data_root_override(repo_root: Path, toy_data_root: Path) -> None:

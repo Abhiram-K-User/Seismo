@@ -38,10 +38,28 @@ def test_cnn_encoder_rejects_invalid_hyperparameters(kwargs: dict, error: type) 
         CNNEncoder(**kwargs)
 
 
-def test_cnn_encoder_forward_is_placeholder() -> None:
-    with pytest.raises(NotYetImplementedError) as info:
-        CNNEncoder(embedding_dim=D)(torch.zeros(B, N, C, T))
-    assert info.value.phase == 3
+def test_cnn_encoder_forward() -> None:
+    encoder = CNNEncoder(embedding_dim=D)
+    x = torch.randn(B, N, C, T)
+    mask = torch.ones(B, N, dtype=torch.bool)
+    mask[:, -1] = False  # last station is masked
+
+    out = encoder(x, station_mask=mask)
+    assert out.shape == (B, N, D)
+    assert torch.all(out[:, -1] == 0.0)  # masked station must be exactly zero
+    assert not torch.all(out[:, 0] == 0.0)
+
+    # Test backward pass
+    loss = out.sum()
+    loss.backward()
+    assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in encoder.parameters())
+
+
+def test_cnn_encoder_pool_time_false() -> None:
+    encoder = CNNEncoder(embedding_dim=D, pool_time=False)
+    x = torch.randn(B, N, C, T)
+    out = encoder(x)
+    assert out.shape == (B, N, T, D)
 
 
 # --- CNNBaseline -------------------------------------------------------------
@@ -64,11 +82,22 @@ def test_cnn_baseline_validation() -> None:
         CNNBaseline(CNNEncoder(embedding_dim=D), station_pooling="sum")
 
 
-def test_cnn_baseline_forward_is_placeholder() -> None:
-    model = CNNBaseline(CNNEncoder(embedding_dim=D), station_pooling="mean")
-    with pytest.raises(NotYetImplementedError) as info:
-        model(torch.zeros(B, N, C, T), torch.ones(B, N, dtype=torch.bool))
-    assert info.value.phase == 3
+@pytest.mark.parametrize("pooling", ["mean", "max", "attention"])
+def test_cnn_baseline_forward(pooling: str) -> None:
+    encoder = CNNEncoder(embedding_dim=D)
+    model = CNNBaseline(encoder, num_classes=2, station_pooling=pooling)
+    x = torch.randn(B, N, C, T)
+    mask = torch.ones(B, N, dtype=torch.bool)
+    mask[:, -1] = False
+
+    logits = model(x, station_mask=mask)
+    assert logits.shape == (B, 2)
+    assert torch.isfinite(logits).all()
+
+    # Test gradient flow
+    loss = logits.sum()
+    loss.backward()
+    assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in model.parameters())
 
 
 # --- GAT ---------------------------------------------------------------------

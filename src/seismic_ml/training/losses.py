@@ -22,10 +22,8 @@ def cross_entropy_loss(
     Args:
         logits: ``[B, K]``; targets: ``[B]`` class indices;
         class_weights: optional ``[K]`` weights (class-imbalance decision, Phase 1/3).
-
-    TODO(Phase 3): implement.
     """
-    raise NotYetImplementedError("cross_entropy_loss", phase=3)
+    return torch.nn.functional.cross_entropy(logits, targets, weight=class_weights)
 
 
 def evidential_loss(

@@ -182,11 +182,48 @@ def create_dataloader(
     batch_size: int,
     *,
     shuffle: bool,
+    class_names: Sequence[str] = ("earthquake", "anthropogenic"),
+    max_stations: int | None = None,
+    allow_unlabeled: bool = False,
     num_workers: int = 0,
     seed: int | None = None,
+    drop_last: bool = False,
+    pin_memory: bool = False,
 ) -> DataLoader:
     """Build a seeded DataLoader using :func:`collate_events`.
 
-    TODO(Phase 3): implement together with the training pipeline.
+    Args:
+        dataset: Dataset yielding :class:`SeismicEvent` instances.
+        batch_size: Number of events per batch.
+        shuffle: Whether to shuffle event order.
+        class_names: Expected class names for integer label mapping.
+        max_stations: Padding size ``N`` (default: largest event in the batch).
+        allow_unlabeled: Whether to accept events without labels (encoded as -1).
+        num_workers: Subprocesses for data loading.
+        seed: Random seed for reproducible shuffling generator.
+        drop_last: Whether to drop the last incomplete batch.
+        pin_memory: Whether to copy tensors into CUDA pinned memory.
     """
-    raise NotYetImplementedError("create_dataloader", phase=3)
+    generator = None
+    if seed is not None:
+        generator = torch.Generator().manual_seed(seed)
+
+    def _collate(events: Sequence[SeismicEvent]) -> EventBatch:
+        return collate_events(
+            events,
+            class_names=class_names,
+            max_stations=max_stations,
+            allow_unlabeled=allow_unlabeled,
+        )
+
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        collate_fn=_collate,
+        generator=generator,
+        drop_last=drop_last,
+        pin_memory=pin_memory,
+    )
+

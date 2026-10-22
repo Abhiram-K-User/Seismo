@@ -143,7 +143,7 @@ def temporal_split(
     t_train, t_val = pd.Timestamp(train_end, tz="UTC"), pd.Timestamp(val_end, tz="UTC")
     if not t_train < t_val:
         raise ValueError("train_end must be before val_end")
-    buffer = pd.Timedelta(days=buffer_days)
+    buffer = pd.Timedelta(days=int(buffer_days))
     t = table["reference_time"]
     supervised = table["role"] == "supervised"
 

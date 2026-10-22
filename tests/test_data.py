@@ -288,9 +288,12 @@ def test_event_batch_validates_channel_mask() -> None:
 # --- Placeholders (later phases) --------------------------------------------------------
 
 
-def test_dataloader_is_placeholder(toy_raw_dir: Path, data_config: dict) -> None:
+def test_create_dataloader_batches_events(toy_raw_dir: Path, data_config: dict) -> None:
     ds = SeismicEventDataset.from_config(toy_raw_dir, data_config)
-    with pytest.raises(NotYetImplementedError) as info:
-        create_dataloader(ds, batch_size=2, shuffle=True)
-    assert info.value.phase == 3
+    loader = create_dataloader(ds, batch_size=2, shuffle=False, class_names=["eq", "px", "lf"], seed=42)
+    batches = list(loader)
+    assert len(batches) == (len(ds) + 1) // 2
+    batch = batches[0]
+    assert batch.waveforms.shape[0] == 2
+    assert batch.station_mask.shape[0] == 2
     ds.close()
