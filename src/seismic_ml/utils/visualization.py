@@ -241,6 +241,44 @@ def plot_confusion_matrix(cm: np.ndarray, class_names: Sequence[str]) -> Any:
     return fig
 
 
+def plot_uncertainty_distribution(
+    uncertainties: Sequence[float],
+    targets: Sequence[int],
+    class_names: Sequence[str],
+) -> Any:
+    """Plot distribution of predicted uncertainty mass (vacuity u) per class."""
+    plt = _pyplot()
+    u_arr = np.array(uncertainties)
+    t_arr = np.array(targets)
+
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    colors = ["#1f77b4", "#d62728", "#2ca02c", "#ff7f0e"]
+
+    bins = np.linspace(0.0, 1.0, 21)
+    for idx, cname in enumerate(class_names):
+        c_u = u_arr[t_arr == idx]
+        if len(c_u) > 0:
+            color = colors[idx % len(colors)]
+            ax.hist(
+                c_u,
+                bins=bins,
+                alpha=0.55,
+                color=color,
+                edgecolor=color,
+                density=True,
+                label=f"{cname} (mean u = {np.mean(c_u):.3f})",
+            )
+
+    ax.set_xlabel("Uncertainty Mass $u = K / S$ (Vacuity)", fontsize=10, fontweight="bold")
+    ax.set_ylabel("Density", fontsize=10, fontweight="bold")
+    ax.set_title("Evidential Uncertainty Distribution by Event Class", fontsize=11, fontweight="bold")
+    ax.set_xlim(0.0, 1.0)
+    ax.grid(True, linestyle="--", alpha=0.5)
+    ax.legend(fontsize=9)
+    fig.tight_layout()
+    return fig
+
+
 def plot_reliability_diagram(
     bin_confidence: np.ndarray,
     bin_accuracy: np.ndarray,

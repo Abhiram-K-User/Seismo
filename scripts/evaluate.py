@@ -112,6 +112,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         is_gat = (args.model == "gat")
 
+    is_edl = "edl" in ckpt_str or model_cfg.get("head", {}).get("type") == "evidential"
+    head_type = "evidential" if is_edl else "softmax"
+
     if is_gat:
         gat_cfg = model_cfg.get("gat", {})
         graph_cfg = model_cfg.get("graph", {})
@@ -138,12 +141,14 @@ def main(argv: list[str] | None = None) -> int:
             k_neighbors=int(spatial_cfg.get("k_neighbors") or 5),
             radius_km=spatial_cfg.get("radius_km"),
             sigma_km=spatial_cfg.get("sigma_km"),
+            head_type=head_type,
         )
     else:
         model = CNNBaseline(
             encoder=encoder,
             num_classes=len(class_names),
             station_pooling=station_pooling,
+            head_type=head_type,
         )
 
     trainer = Trainer(
@@ -171,19 +176,29 @@ def main(argv: list[str] | None = None) -> int:
     try:
         import numpy as np
         import matplotlib.pyplot as plt
-        from seismic_ml.utils.visualization import plot_confusion_matrix
+        from seismic_ml.utils.visualization import plot_confusion_matrix, plot_uncertainty_distribution
 
         cm = np.array(metrics.get("confusion_matrix", []))
+        out_dir = args.checkpoint.parent
+        out_dir.mkdir(parents=True, exist_ok=True)
         if cm.size > 0:
             cm_fig = plot_confusion_matrix(cm, class_names)
-            out_dir = args.checkpoint.parent
-            out_dir.mkdir(parents=True, exist_ok=True)
             cm_path = out_dir / f"confusion_matrix_{args.split}.png"
             cm_fig.savefig(cm_path, dpi=200, bbox_inches="tight")
             plt.close(cm_fig)
             logger.info("Saved confusion matrix plot to %s", cm_path)
+
+        if "uncertainties" in metrics and len(metrics["uncertainties"]) > 0:
+            split_targets = [dataset[i].label for i in range(len(dataset))]
+            if all(lbl in class_names for lbl in split_targets if lbl is not None):
+                target_indices = [class_names.index(lbl) for lbl in split_targets if lbl is not None]
+                u_fig = plot_uncertainty_distribution(metrics["uncertainties"], target_indices, class_names)
+                u_path = out_dir / f"uncertainty_distribution_{args.split}.png"
+                u_fig.savefig(u_path, dpi=200, bbox_inches="tight")
+                plt.close(u_fig)
+                logger.info("Saved uncertainty distribution plot to %s", u_path)
     except Exception as exc:
-        logger.warning("Could not generate confusion matrix plot: %s", exc)
+        logger.warning("Could not generate evaluation plots: %s", exc)
 
     return 0
 

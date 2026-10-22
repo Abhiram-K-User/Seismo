@@ -10,9 +10,12 @@ import torch
 from torch import nn
 
 from seismic_ml.features.cnn_encoder import CNNEncoder
+from seismic_ml.models.edl import EvidentialClassifier
+from seismic_ml.uncertainty.dirichlet import DirichletOutput
 from seismic_ml.utils.validation import check_choice, check_int
 
 STATION_POOLING: tuple[str, ...] = ("mean", "max", "attention")
+HEAD_TYPES: tuple[str, ...] = ("softmax", "evidential")
 
 
 class StationAttentionPooling(nn.Module):
@@ -63,6 +66,8 @@ class CNNBaseline(nn.Module):
         num_classes: int = 2,
         *,
         station_pooling: str,
+        head_type: str = "softmax",
+        evidence_activation: str = "softplus",
     ) -> None:
         super().__init__()
         if not isinstance(encoder, CNNEncoder):
@@ -72,16 +77,25 @@ class CNNBaseline(nn.Module):
         self.encoder = encoder
         self.num_classes = check_int("num_classes", num_classes, minimum=2)
         self.station_pooling = check_choice("station_pooling", station_pooling, STATION_POOLING)
+        self.head_type = check_choice("head_type", head_type, HEAD_TYPES)
+        self.evidence_activation = evidence_activation
 
         if self.station_pooling == "attention":
             self.pool_module = StationAttentionPooling(self.encoder.embedding_dim)
         else:
             self.pool_module = None
 
-        self.classifier = nn.Sequential(
-            nn.Dropout(0.2),
-            nn.Linear(self.encoder.embedding_dim, self.num_classes),
-        )
+        if self.head_type == "evidential":
+            self.classifier = EvidentialClassifier(
+                self.encoder.embedding_dim,
+                num_classes=self.num_classes,
+                evidence_activation=self.evidence_activation,
+            )
+        else:
+            self.classifier = nn.Sequential(
+                nn.Dropout(0.2),
+                nn.Linear(self.encoder.embedding_dim, self.num_classes),
+            )
 
     def pool_stations(
         self,
@@ -118,7 +132,7 @@ class CNNBaseline(nn.Module):
         waveforms: torch.Tensor,
         station_mask: torch.Tensor | None = None,
         **kwargs: object,
-    ) -> torch.Tensor:
+    ) -> torch.Tensor | DirichletOutput:
         """Forward pass.
 
         Args:
@@ -127,7 +141,7 @@ class CNNBaseline(nn.Module):
             **kwargs: Extra arguments ignored by CNNBaseline (e.g. coordinates).
 
         Returns:
-            Logits [B, num_classes].
+            Logits [B, num_classes] (if softmax) or DirichletOutput (if evidential).
         """
         station_embeddings = self.encoder(waveforms, station_mask=station_mask)
         event_embedding = self.pool_stations(station_embeddings, station_mask=station_mask)

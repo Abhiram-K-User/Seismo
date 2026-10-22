@@ -16,7 +16,9 @@ from torch import nn
 
 from seismic_ml.features.cnn_encoder import CNNEncoder
 from seismic_ml.graph.construction import build_spatial_graph
-from seismic_ml.models.cnn import STATION_POOLING, StationAttentionPooling
+from seismic_ml.models.cnn import HEAD_TYPES, STATION_POOLING, StationAttentionPooling
+from seismic_ml.models.edl import EvidentialClassifier
+from seismic_ml.uncertainty.dirichlet import DirichletOutput
 from seismic_ml.utils.validation import check_choice, check_dropout, check_int
 
 
@@ -246,6 +248,8 @@ class GATClassifier(nn.Module):
         k_neighbors: int = 5,
         radius_km: float | None = None,
         sigma_km: float | None = None,
+        head_type: str = "softmax",
+        evidence_activation: str = "softplus",
     ) -> None:
         super().__init__()
         if not isinstance(encoder, CNNEncoder):
@@ -261,6 +265,8 @@ class GATClassifier(nn.Module):
         self.gat = gat
         self.num_classes = check_int("num_classes", num_classes, minimum=2)
         self.station_pooling = check_choice("station_pooling", station_pooling, STATION_POOLING)
+        self.head_type = check_choice("head_type", head_type, HEAD_TYPES)
+        self.evidence_activation = evidence_activation
         self.graph_method = graph_method
         self.k_neighbors = k_neighbors
         self.radius_km = radius_km
@@ -271,10 +277,17 @@ class GATClassifier(nn.Module):
         else:
             self.pool_module = None
 
-        self.classifier = nn.Sequential(
-            nn.Dropout(0.2),
-            nn.Linear(self.gat.out_dim, self.num_classes),
-        )
+        if self.head_type == "evidential":
+            self.classifier = EvidentialClassifier(
+                self.gat.out_dim,
+                num_classes=self.num_classes,
+                evidence_activation=self.evidence_activation,
+            )
+        else:
+            self.classifier = nn.Sequential(
+                nn.Dropout(0.2),
+                nn.Linear(self.gat.out_dim, self.num_classes),
+            )
 
     def pool_stations(
         self,
@@ -314,7 +327,7 @@ class GATClassifier(nn.Module):
         *,
         return_attention: bool = False,
         **kwargs: object,
-    ) -> torch.Tensor | tuple[torch.Tensor, tuple[torch.Tensor, ...] | None]:
+    ) -> torch.Tensor | DirichletOutput | tuple[torch.Tensor | DirichletOutput, tuple[torch.Tensor, ...] | None]:
         """Forward pass.
 
         Args:
@@ -322,10 +335,10 @@ class GATClassifier(nn.Module):
             station_mask: ``[B, N]`` bool mask of real stations.
             coordinates: ``[B, N, 2]`` station coordinates (lat, lon) in degrees.
             adjacency: Optional precomputed adjacency matrix ``[B, N, N]``.
-            return_attention: If True, returns ``(logits, attention_weights)``.
+            return_attention: If True, returns ``(output, attention_weights)``.
 
         Returns:
-            Logits ``[B, num_classes]`` or tuple with attention weights.
+            Logits or DirichletOutput, or tuple with attention weights.
         """
         # 1. Encode per-station waveforms into node features
         station_emb = self.encoder(waveforms, station_mask=station_mask)  # [B, N, D]
@@ -352,9 +365,9 @@ class GATClassifier(nn.Module):
         # 4. Attention pooling over stations into event embedding
         event_emb = self.pool_stations(gat_out.node_embeddings, station_mask=station_mask)
 
-        # 5. Classification head
-        logits = self.classifier(event_emb)
+        # 5. Classification head (softmax logits or DirichletOutput)
+        out = self.classifier(event_emb)
 
         if return_attention:
-            return logits, gat_out.attention_weights
-        return logits
+            return out, gat_out.attention_weights
+        return out

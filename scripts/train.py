@@ -1,7 +1,7 @@
-"""Train Baseline 1 (CNN) or Baseline 3 (CNN + GATv2) on preprocessed seismic data.
+"""Train Baseline 1 (CNN), Baseline 3 (GATv2), or the Proposed Evidential Model.
 
 Usage:
-    python scripts/train.py [--model {cnn,gat}] [--config configs/config.yaml] [--data-root PATH]
+    python scripts/train.py [--model {cnn,gat}] [--head {softmax,evidential}] [--epochs N]
 """
 
 from __future__ import annotations
@@ -35,7 +35,9 @@ DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "config.yaml"
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="Entry config file.")
-    parser.add_argument("--model", choices=["cnn", "gat"], default="gat", help="Model architecture: 'cnn' (Baseline 1) or 'gat' (Baseline 3, GATv2). Default: 'gat'.")
+    parser.add_argument("--model", choices=["cnn", "gat"], default="gat", help="Model architecture: 'cnn' or 'gat'. Default: 'gat'.")
+    parser.add_argument("--head", choices=["softmax", "evidential"], default="evidential", help="Classification head: 'softmax' or 'evidential' (EDL). Default: 'evidential'.")
+    parser.add_argument("--evidence-activation", choices=["relu", "softplus", "exp"], default="softplus", help="Non-negative activation for evidential head. Default: 'softplus'.")
     parser.add_argument("--data-root", default=None, help="Data root directory.")
     parser.add_argument("--output-root", default=None, help="Output root directory.")
     parser.add_argument("--device", default=None, help="Device to use ('cpu', 'cuda', 'auto').")
@@ -146,6 +148,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     selected_model = args.model
+    selected_head = args.head
 
     if selected_model == "gat":
         gat_cfg = model_cfg.get("gat", {})
@@ -173,22 +176,28 @@ def main(argv: list[str] | None = None) -> int:
             k_neighbors=int(spatial_cfg.get("k_neighbors") or 5),
             radius_km=spatial_cfg.get("radius_km"),
             sigma_km=spatial_cfg.get("sigma_km"),
+            head_type=selected_head,
+            evidence_activation=args.evidence_activation,
         )
-        run_name = "baseline3_gat"
+        run_name = "proposed_gat_edl" if selected_head == "evidential" else "baseline3_gat"
         logger.info(
-            "Starting training Baseline 3 (CNN + GATv2 [%d layers, %d heads] + %s pooling)...",
+            "Starting training %s (CNN + GATv2 [%d layers, %d heads] + %s pooling + %s head)...",
+            run_name,
             num_layers,
             num_heads,
             station_pooling,
+            selected_head,
         )
     else:
         model = CNNBaseline(
             encoder=encoder,
             num_classes=len(class_names),
             station_pooling=station_pooling,
+            head_type=selected_head,
+            evidence_activation=args.evidence_activation,
         )
-        run_name = "baseline1_cnn"
-        logger.info("Starting training Baseline 1 (CNN + %s pooling)...", station_pooling)
+        run_name = "baseline1_cnn_edl" if selected_head == "evidential" else "baseline1_cnn"
+        logger.info("Starting training %s (CNN + %s pooling + %s head)...", run_name, station_pooling, selected_head)
 
     run_output_dir = paths.output_root / run_name
     if args.clean and run_output_dir.exists():
@@ -218,6 +227,7 @@ def main(argv: list[str] | None = None) -> int:
             plot_attention_weights,
             plot_confusion_matrix,
             plot_training_history,
+            plot_uncertainty_distribution,
         )
         import matplotlib.pyplot as plt
 
@@ -238,6 +248,16 @@ def main(argv: list[str] | None = None) -> int:
             cm_fig.savefig(cm_path, dpi=200, bbox_inches="tight")
             plt.close(cm_fig)
             logger.info("Saved validation confusion matrix graph to %s", cm_path)
+
+        # If evidential, save uncertainty distribution histogram
+        if selected_head == "evidential" and "uncertainties" in val_eval:
+            val_targets = [val_dataset[i].label for i in range(len(val_dataset))]
+            target_indices = [class_names.index(lbl) for lbl in val_targets]
+            u_fig = plot_uncertainty_distribution(val_eval["uncertainties"], target_indices, class_names)
+            u_path = run_output_dir / "val_uncertainty_distribution.png"
+            u_fig.savefig(u_path, dpi=200, bbox_inches="tight")
+            plt.close(u_fig)
+            logger.info("Saved validation uncertainty distribution plot to %s", u_path)
 
         # If GAT, save an attention weights visualization from the validation set
         if selected_model == "gat":

@@ -9,6 +9,7 @@ from torch import nn
 from seismic_ml.features import CNNEncoder
 from seismic_ml.models import STGNN, CNNBaseline, EvidentialClassifier, GAT, GATClassifier
 from seismic_ml.placeholders import NotYetImplementedError
+from seismic_ml.uncertainty.dirichlet import DirichletOutput
 
 B, N, C, T, D = 2, 4, 3, 100, 16
 
@@ -187,12 +188,39 @@ def test_stgnn_rejects_invalid_layers() -> None:
 # --- EvidentialClassifier ----------------------------------------------------
 
 
-def test_evidential_classifier_instantiation_and_placeholder() -> None:
+def test_evidential_classifier_forward() -> None:
     head = EvidentialClassifier(D, num_classes=2, evidence_activation="softplus")
     assert head.num_classes == 2
-    with pytest.raises(NotYetImplementedError) as info:
-        head(torch.zeros(B, D))
-    assert info.value.phase == 8
+    x = torch.randn(B, D, requires_grad=True)
+    out = head(x)
+    assert isinstance(out, DirichletOutput)
+    assert out.evidence.shape == (B, 2)
+    assert torch.all(out.evidence >= 0.0)
+    assert torch.allclose(out.belief.sum(dim=-1) + out.uncertainty, torch.ones(B))
+
+    # Backward gradient check
+    loss = out.expected_probability.sum()
+    loss.backward()
+    assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in head.parameters())
+
+
+def test_models_with_evidential_head() -> None:
+    encoder = CNNEncoder(embedding_dim=D)
+    cnn_edl = CNNBaseline(encoder, num_classes=2, station_pooling="attention", head_type="evidential")
+    gat = GAT(D, 32, 32, num_heads=4, num_layers=2)
+    gat_edl = GATClassifier(encoder, gat, num_classes=2, head_type="evidential")
+
+    wfs = torch.randn(B, N, C, T)
+    coords = torch.randn(B, N, 2)
+    mask = torch.ones(B, N, dtype=torch.bool)
+
+    out_cnn = cnn_edl(wfs, station_mask=mask)
+    assert isinstance(out_cnn, DirichletOutput)
+    assert out_cnn.uncertainty.shape == (B,)
+
+    out_gat = gat_edl(wfs, station_mask=mask, coordinates=coords)
+    assert isinstance(out_gat, DirichletOutput)
+    assert out_gat.expected_probability.shape == (B, 2)
 
 
 @pytest.mark.parametrize(

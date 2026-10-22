@@ -59,14 +59,16 @@ def test_cross_entropy_loss() -> None:
     assert loss.item() > 0
 
 
-def test_losses_are_placeholders() -> None:
-    logits = torch.zeros(4, 2)
-    targets = torch.zeros(4, dtype=torch.long)
-    _assert_placeholder(
-        lambda: evidential_loss(logits, targets, variant="mse", regularization_weight=0.0), phase=8
-    )
-    _assert_placeholder(lambda: kl_dirichlet_regularizer(logits, targets), phase=8)
-    _assert_placeholder(lambda: annealing_coefficient(1, 10), phase=8)
+def test_evidential_losses_and_annealing() -> None:
+    alpha = torch.tensor([[2.0, 1.0], [1.5, 3.0]])
+    targets = torch.tensor([0, 1])
+    loss = evidential_loss(alpha, targets, variant="digamma", regularization_weight=0.1)
+    assert loss.ndim == 0 and loss.item() > 0
+
+    kl = kl_dirichlet_regularizer(alpha, targets)
+    assert kl.ndim == 0 and kl.item() >= 0
+
+    assert annealing_coefficient(5, 10) == 0.5
 
 
 def test_classification_metrics() -> None:

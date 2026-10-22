@@ -20,7 +20,8 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from seismic_ml.evaluation.classification import compute_classification_metrics, confusion_matrix
-from seismic_ml.training.losses import cross_entropy_loss
+from seismic_ml.training.losses import annealing_coefficient, cross_entropy_loss, evidential_loss
+from seismic_ml.uncertainty.dirichlet import DirichletOutput
 
 logger = logging.getLogger("seismic_ml.training")
 
@@ -84,12 +85,20 @@ class Trainer:
         else:
             self.class_weights = None
 
-    def train_epoch(self, loader: DataLoader, *, pbar: Any = None) -> dict[str, float]:
+        # EDL loss configuration (Phase 8)
+        loss_cfg = train_cfg.get("loss", {})
+        edl_cfg = loss_cfg.get("evidential", {}) if isinstance(loss_cfg, dict) else {}
+        self.edl_variant = (edl_cfg.get("variant") if edl_cfg else None) or "digamma"
+        self.annealing_epochs = int((edl_cfg.get("kl_annealing_epochs") if edl_cfg else None) or 10)
+        self.kl_weight = float((edl_cfg.get("kl_weight") if edl_cfg else None) or 1.0)
+
+    def train_epoch(self, loader: DataLoader, *, current_epoch: int = 1, pbar: Any = None) -> dict[str, float]:
         """Run one training epoch; return aggregated metrics."""
         self.model.train()
         total_loss = 0.0
         all_preds: list[int] = []
         all_targets: list[int] = []
+        all_uncertainties: list[float] = []
         num_batches = 0
         correct_count = 0
         sample_count = 0
@@ -116,14 +125,22 @@ class Trainer:
                 coordinates = coordinates[valid_mask]
 
             self.optimizer.zero_grad()
-            logits = self.model(waveforms, station_mask=station_mask, coordinates=coordinates)
-            loss = cross_entropy_loss(logits, labels, class_weights=self.class_weights)
+            out = self.model(waveforms, station_mask=station_mask, coordinates=coordinates)
+
+            if isinstance(out, DirichletOutput):
+                reg_weight = self.kl_weight * annealing_coefficient(current_epoch, self.annealing_epochs)
+                loss = evidential_loss(out.alpha, labels, variant=self.edl_variant, regularization_weight=reg_weight)
+                preds = torch.argmax(out.expected_probability, dim=-1)
+                all_uncertainties.extend(out.uncertainty.detach().cpu().numpy().tolist())
+            else:
+                loss = cross_entropy_loss(out, labels, class_weights=self.class_weights)
+                preds = torch.argmax(out, dim=-1)
+
             loss.backward()
             self.optimizer.step()
 
             batch_loss = float(loss.item())
             total_loss += batch_loss
-            preds = torch.argmax(logits, dim=-1)
             preds_np = preds.detach().cpu().numpy()
             targets_np = labels.detach().cpu().numpy()
 
@@ -138,9 +155,11 @@ class Trainer:
                 step_ms = int(((time.time() - epoch_start) / max(num_batches, 1)) * 1000)
                 running_acc = correct_count / max(sample_count, 1)
                 running_loss = total_loss / max(num_batches, 1)
-                pbar.set_postfix_str(
-                    f"{step_ms}ms/step - accuracy: {running_acc:.4f} - loss: {running_loss:.4f}"
-                )
+                postfix = f"{step_ms}ms/step - accuracy: {running_acc:.4f} - loss: {running_loss:.4f}"
+                if all_uncertainties:
+                    running_u = float(np.mean(all_uncertainties))
+                    postfix += f" - u: {running_u:.4f}"
+                pbar.set_postfix_str(postfix)
 
         if self.scheduler is not None:
             self.scheduler.step()
@@ -149,6 +168,8 @@ class Trainer:
             np.array(all_targets), np.array(all_preds), self.class_names
         )
         metrics["loss"] = total_loss / max(num_batches, 1)
+        if all_uncertainties:
+            metrics["mean_uncertainty"] = float(np.mean(all_uncertainties))
         return metrics
 
     def evaluate(self, loader: DataLoader) -> dict[str, Any]:
@@ -157,6 +178,8 @@ class Trainer:
         total_loss = 0.0
         all_preds: list[int] = []
         all_targets: list[int] = []
+        all_uncertainties: list[float] = []
+        all_beliefs: list[list[float]] = []
         num_batches = 0
 
         with torch.no_grad():
@@ -176,11 +199,18 @@ class Trainer:
                 if coordinates is not None:
                     coordinates = coordinates[valid_mask]
 
-                logits = self.model(waveforms, station_mask=station_mask, coordinates=coordinates)
-                loss = cross_entropy_loss(logits, labels, class_weights=self.class_weights)
+                out = self.model(waveforms, station_mask=station_mask, coordinates=coordinates)
+
+                if isinstance(out, DirichletOutput):
+                    loss = evidential_loss(out.alpha, labels, variant=self.edl_variant, regularization_weight=0.0)
+                    preds = torch.argmax(out.expected_probability, dim=-1)
+                    all_uncertainties.extend(out.uncertainty.detach().cpu().numpy().tolist())
+                    all_beliefs.extend(out.belief.detach().cpu().numpy().tolist())
+                else:
+                    loss = cross_entropy_loss(out, labels, class_weights=self.class_weights)
+                    preds = torch.argmax(out, dim=-1)
 
                 total_loss += float(loss.item())
-                preds = torch.argmax(logits, dim=-1)
                 all_preds.extend(preds.cpu().numpy().tolist())
                 all_targets.extend(labels.cpu().numpy().tolist())
                 num_batches += 1
@@ -191,6 +221,10 @@ class Trainer:
         metrics["loss"] = total_loss / max(num_batches, 1)
         cm = confusion_matrix(np.array(all_targets), np.array(all_preds), len(self.class_names))
         metrics["confusion_matrix"] = cm.tolist()
+        if all_uncertainties:
+            metrics["mean_uncertainty"] = float(np.mean(all_uncertainties))
+            metrics["uncertainties"] = all_uncertainties
+            metrics["beliefs"] = all_beliefs
         return metrics
 
     def fit(self, train_loader: DataLoader, val_loader: DataLoader | None = None) -> dict[str, Any]:
@@ -219,7 +253,9 @@ class Trainer:
                 bar_format="{n_fmt}/{total_fmt} ━{bar:20}━ {elapsed} {postfix}",
             )
 
-            train_metrics = self.train_epoch(train_loader, pbar=pbar)
+            train_metrics = self.train_epoch(train_loader, current_epoch=epoch, pbar=pbar)
+            pbar.close()
+
             epoch_data: dict[str, Any] = {"epoch": epoch, "train": train_metrics}
 
             if val_loader is not None:
