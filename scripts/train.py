@@ -11,6 +11,7 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from seismic_ml.config import load_config
@@ -158,8 +159,33 @@ def main(argv: list[str] | None = None) -> int:
     with open(metrics_file, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
 
+    # Save training curves and confusion matrix plots for project reports
+    try:
+        from seismic_ml.utils.visualization import plot_confusion_matrix, plot_training_history
+        import matplotlib.pyplot as plt
+
+        history_fig = plot_training_history(results["history"])
+        history_path = run_output_dir / "training_curves.png"
+        history_fig.savefig(history_path, dpi=200, bbox_inches="tight")
+        plt.close(history_fig)
+        logger.info("Saved training curves graph to %s", history_path)
+
+        best_ckpt = run_output_dir / "best_model.pt"
+        if best_ckpt.exists():
+            trainer.load_checkpoint(best_ckpt)
+        val_eval = trainer.evaluate(val_loader)
+        cm = np.array(val_eval.get("confusion_matrix", []))
+        if cm.size > 0:
+            cm_fig = plot_confusion_matrix(cm, class_names)
+            cm_path = run_output_dir / "val_confusion_matrix.png"
+            cm_fig.savefig(cm_path, dpi=200, bbox_inches="tight")
+            plt.close(cm_fig)
+            logger.info("Saved validation confusion matrix graph to %s", cm_path)
+    except Exception as exc:
+        logger.warning("Could not generate report plots: %s", exc)
+
     logger.info(
-        "Training complete. Best validation score: %.4f. Checkpoints saved to %s",
+        "Training complete. Best validation score: %.4f. Artifacts saved to %s",
         results.get("best_val_score", 0.0),
         run_output_dir,
     )

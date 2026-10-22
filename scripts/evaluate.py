@@ -113,8 +113,26 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Evaluation Results on split: {args.split}")
     print("=" * 45)
     for k, v in metrics.items():
-        print(f"  {k:25s}: {v:.4f}")
+        if isinstance(v, (int, float)):
+            print(f"  {k:25s}: {v:.4f}")
     print("=" * 45 + "\n")
+
+    # Save confusion matrix plot for reports
+    try:
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from seismic_ml.utils.visualization import plot_confusion_matrix
+
+        cm = np.array(metrics.get("confusion_matrix", []))
+        if cm.size > 0:
+            cm_fig = plot_confusion_matrix(cm, class_names)
+            out_dir = args.checkpoint.parent
+            cm_path = out_dir / f"confusion_matrix_{args.split}.png"
+            cm_fig.savefig(cm_path, dpi=200, bbox_inches="tight")
+            plt.close(cm_fig)
+            logger.info("Saved confusion matrix plot to %s", cm_path)
+    except Exception as exc:
+        logger.warning("Could not generate confusion matrix plot: %s", exc)
 
     return 0
 

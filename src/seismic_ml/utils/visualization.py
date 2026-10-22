@@ -135,6 +135,72 @@ def plot_attention_weights(
     raise NotYetImplementedError("plot_attention_weights", phase=6)
 
 
+def plot_training_history(history: Sequence[dict[str, Any]]) -> Any:
+    """Plot training and validation loss and macro F1 curves over epochs."""
+    plt = _pyplot()
+    epochs = [h["epoch"] for h in history]
+    train_loss = [h["train"]["loss"] for h in history]
+    train_f1 = [h["train"].get("macro_f1", 0.0) for h in history]
+
+    has_val = any("val" in h for h in history)
+    val_loss = [h["val"]["loss"] for h in history if "val" in h] if has_val else []
+    val_f1 = [h["val"].get("macro_f1", 0.0) for h in history if "val" in h] if has_val else []
+    val_epochs = [h["epoch"] for h in history if "val" in h] if has_val else []
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5))
+
+    # Loss curve
+    ax1.plot(epochs, train_loss, "o-", label="Train Loss", color="#1f77b4", lw=1.8, ms=4)
+    if has_val:
+        ax1.plot(val_epochs, val_loss, "s-", label="Val Loss", color="#ff7f0e", lw=1.8, ms=4)
+    ax1.set_xlabel("Epoch", fontsize=10)
+    ax1.set_ylabel("Cross-Entropy Loss", fontsize=10)
+    ax1.set_title("Training and Validation Loss", fontsize=11, fontweight="bold")
+    ax1.grid(True, linestyle="--", alpha=0.6)
+    ax1.legend(fontsize=9)
+
+    # Macro F1 curve
+    ax2.plot(epochs, train_f1, "o-", label="Train Macro F1", color="#2ca02c", lw=1.8, ms=4)
+    if has_val:
+        ax2.plot(val_epochs, val_f1, "s-", label="Val Macro F1", color="#d62728", lw=1.8, ms=4)
+    ax2.set_xlabel("Epoch", fontsize=10)
+    ax2.set_ylabel("Macro F1-Score", fontsize=10)
+    ax2.set_title("Training and Validation Macro F1", fontsize=11, fontweight="bold")
+    ax2.set_ylim(-0.05, 1.05)
+    ax2.grid(True, linestyle="--", alpha=0.6)
+    ax2.legend(fontsize=9)
+
+    fig.tight_layout()
+    return fig
+
+
+def plot_confusion_matrix(cm: np.ndarray, class_names: Sequence[str]) -> Any:
+    """Plot an annotated confusion matrix heatmap."""
+    plt = _pyplot()
+    fig, ax = plt.subplots(figsize=(5.5, 4.8))
+    im = ax.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues)
+    fig.colorbar(im, ax=ax)
+
+    ax.set_xticks(range(len(class_names)))
+    ax.set_yticks(range(len(class_names)))
+    ax.set_xticklabels(class_names, rotation=30, ha="right", fontsize=9)
+    ax.set_yticklabels(class_names, fontsize=9)
+    ax.set_xlabel("Predicted Label", fontsize=10, fontweight="bold")
+    ax.set_ylabel("True Label", fontsize=10, fontweight="bold")
+    ax.set_title("Confusion Matrix", fontsize=11, fontweight="bold")
+
+    total = np.sum(cm)
+    for i in range(len(class_names)):
+        for j in range(len(class_names)):
+            count = int(cm[i, j])
+            pct = (count / total * 100) if total > 0 else 0.0
+            color = "white" if count > cm.max() / 2 else "black"
+            ax.text(j, i, f"{count}\n({pct:.1f}%)", ha="center", va="center", color=color, fontsize=9)
+
+    fig.tight_layout()
+    return fig
+
+
 def plot_reliability_diagram(
     bin_confidence: np.ndarray,
     bin_accuracy: np.ndarray,

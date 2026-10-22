@@ -16,7 +16,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from seismic_ml.evaluation.classification import compute_classification_metrics
+from seismic_ml.evaluation.classification import compute_classification_metrics, confusion_matrix
 from seismic_ml.training.losses import cross_entropy_loss
 
 logger = logging.getLogger("seismic_ml.training")
@@ -159,6 +159,8 @@ class Trainer:
             np.array(all_targets), np.array(all_preds), self.class_names
         )
         metrics["loss"] = total_loss / max(num_batches, 1)
+        cm = confusion_matrix(np.array(all_targets), np.array(all_preds), len(self.class_names))
+        metrics["confusion_matrix"] = cm.tolist()
         return metrics
 
     def fit(self, train_loader: DataLoader, val_loader: DataLoader | None = None) -> dict[str, Any]:
