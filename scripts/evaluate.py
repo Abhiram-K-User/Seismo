@@ -31,6 +31,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="Entry config file.")
     parser.add_argument("--checkpoint", type=Path, required=True, help="Model checkpoint path.")
     parser.add_argument("--data-root", default=None, help="Data root directory.")
+    parser.add_argument("--output-root", default=None, help="Output root directory.")
     parser.add_argument("--split", default="test", choices=["train", "val", "test", "ood"], help="Split to evaluate on.")
     parser.add_argument("--device", default=None, help="Device to use ('cpu', 'cuda', 'auto').")
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size for evaluation.")
@@ -42,10 +43,15 @@ def main(argv: list[str] | None = None) -> int:
     logger = configure_logging()
 
     config = load_config(args.config)
+    output_root_override = args.output_root
+    if output_root_override is None and args.data_root is not None:
+        output_root_override = Path(args.data_root) / "outputs"
+
     paths = resolve_paths(
         config,
         project_root=project_root_from_config(args.config),
         data_root=args.data_root,
+        output_root=output_root_override,
     )
 
     device_arg = args.device or config.get("training", {}).get("device", "auto")
@@ -126,7 +132,8 @@ def main(argv: list[str] | None = None) -> int:
         cm = np.array(metrics.get("confusion_matrix", []))
         if cm.size > 0:
             cm_fig = plot_confusion_matrix(cm, class_names)
-            out_dir = args.checkpoint.parent
+            out_dir = paths.output_root / "baseline1_cnn"
+            out_dir.mkdir(parents=True, exist_ok=True)
             cm_path = out_dir / f"confusion_matrix_{args.split}.png"
             cm_fig.savefig(cm_path, dpi=200, bbox_inches="tight")
             plt.close(cm_fig)

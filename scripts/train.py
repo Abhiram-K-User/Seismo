@@ -46,11 +46,15 @@ def main(argv: list[str] | None = None) -> int:
     logger = configure_logging()
 
     config = load_config(args.config)
+    output_root_override = args.output_root
+    if output_root_override is None and args.data_root is not None:
+        output_root_override = Path(args.data_root) / "outputs"
+
     paths = resolve_paths(
         config,
         project_root=project_root_from_config(args.config),
         data_root=args.data_root,
-        output_root=args.output_root,
+        output_root=output_root_override,
     )
 
     seed = int(config.get("seed", 42))
