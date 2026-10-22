@@ -199,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
                 u_fig, ax = plt.subplots(figsize=(7, 4.5))
                 ax.hist(metrics["uncertainties"], bins=20, color="#d9534f", alpha=0.75, edgecolor="black")
                 ax.set_title(f"Evidential Vacuity/Uncertainty Distribution ({args.split.upper()} Events)", fontsize=13, fontweight="bold")
-                ax.set_xlabel("Uncertainty Mass $u \in [0, 1]$", fontsize=11)
+                ax.set_xlabel(r"Uncertainty Mass $u \in [0, 1]$", fontsize=11)
                 ax.set_ylabel("Event Count", fontsize=11)
                 ax.grid(True, linestyle="--", alpha=0.5)
             u_path = out_dir / f"uncertainty_distribution_{args.split}.png"
