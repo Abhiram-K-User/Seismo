@@ -190,13 +190,22 @@ def main(argv: list[str] | None = None) -> int:
 
         if "uncertainties" in metrics and len(metrics["uncertainties"]) > 0:
             split_targets = [dataset[i].label for i in range(len(dataset))]
-            if all(lbl in class_names for lbl in split_targets if lbl is not None):
+            has_labels = all(lbl in class_names for lbl in split_targets if lbl is not None) and any(lbl is not None for lbl in split_targets)
+            if has_labels:
                 target_indices = [class_names.index(lbl) for lbl in split_targets if lbl is not None]
                 u_fig = plot_uncertainty_distribution(metrics["uncertainties"], target_indices, class_names)
-                u_path = out_dir / f"uncertainty_distribution_{args.split}.png"
-                u_fig.savefig(u_path, dpi=200, bbox_inches="tight")
-                plt.close(u_fig)
-                logger.info("Saved uncertainty distribution plot to %s", u_path)
+            else:
+                # OOD histogram
+                u_fig, ax = plt.subplots(figsize=(7, 4.5))
+                ax.hist(metrics["uncertainties"], bins=20, color="#d9534f", alpha=0.75, edgecolor="black")
+                ax.set_title(f"Evidential Vacuity/Uncertainty Distribution ({args.split.upper()} Events)", fontsize=13, fontweight="bold")
+                ax.set_xlabel("Uncertainty Mass $u \in [0, 1]$", fontsize=11)
+                ax.set_ylabel("Event Count", fontsize=11)
+                ax.grid(True, linestyle="--", alpha=0.5)
+            u_path = out_dir / f"uncertainty_distribution_{args.split}.png"
+            u_fig.savefig(u_path, dpi=200, bbox_inches="tight")
+            plt.close(u_fig)
+            logger.info("Saved uncertainty distribution plot to %s", u_path)
     except Exception as exc:
         logger.warning("Could not generate evaluation plots: %s", exc)
 

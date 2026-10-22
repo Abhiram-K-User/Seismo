@@ -199,7 +199,7 @@ def test_evidential_classifier_forward() -> None:
     assert torch.allclose(out.belief.sum(dim=-1) + out.uncertainty, torch.ones(B))
 
     # Backward gradient check
-    loss = out.expected_probability.sum()
+    loss = out.expected_probability[:, 0].sum()
     loss.backward()
     assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in head.parameters())
 

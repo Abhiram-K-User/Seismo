@@ -189,43 +189,60 @@ class Trainer:
                 labels = batch.labels.to(self.device)
                 coordinates = batch.coordinates.to(self.device) if batch.coordinates is not None else None
 
-                valid_mask = labels >= 0
-                if not valid_mask.any():
-                    continue
+                # In-distribution evaluation with labels
+                if (labels >= 0).any():
+                    valid_mask = labels >= 0
+                    eval_waveforms = waveforms[valid_mask]
+                    eval_station_mask = station_mask[valid_mask]
+                    eval_labels = labels[valid_mask]
+                    eval_coords = coordinates[valid_mask] if coordinates is not None else None
 
-                waveforms = waveforms[valid_mask]
-                station_mask = station_mask[valid_mask]
-                labels = labels[valid_mask]
-                if coordinates is not None:
-                    coordinates = coordinates[valid_mask]
+                    out = self.model(eval_waveforms, station_mask=eval_station_mask, coordinates=eval_coords)
 
-                out = self.model(waveforms, station_mask=station_mask, coordinates=coordinates)
+                    if isinstance(out, DirichletOutput):
+                        loss = evidential_loss(out.alpha, eval_labels, variant=self.edl_variant, regularization_weight=0.0)
+                        preds = torch.argmax(out.expected_probability, dim=-1)
+                        all_uncertainties.extend(out.uncertainty.detach().cpu().numpy().tolist())
+                        all_beliefs.extend(out.belief.detach().cpu().numpy().tolist())
+                    else:
+                        loss = cross_entropy_loss(out, eval_labels, class_weights=self.class_weights)
+                        preds = torch.argmax(out, dim=-1)
 
-                if isinstance(out, DirichletOutput):
-                    loss = evidential_loss(out.alpha, labels, variant=self.edl_variant, regularization_weight=0.0)
-                    preds = torch.argmax(out.expected_probability, dim=-1)
-                    all_uncertainties.extend(out.uncertainty.detach().cpu().numpy().tolist())
-                    all_beliefs.extend(out.belief.detach().cpu().numpy().tolist())
+                    total_loss += float(loss.item())
+                    all_preds.extend(preds.cpu().numpy().tolist())
+                    all_targets.extend(eval_labels.cpu().numpy().tolist())
+                    num_batches += 1
                 else:
-                    loss = cross_entropy_loss(out, labels, class_weights=self.class_weights)
-                    preds = torch.argmax(out, dim=-1)
+                    # Unlabeled / Out-Of-Distribution evaluation
+                    out = self.model(waveforms, station_mask=station_mask, coordinates=coordinates)
+                    if isinstance(out, DirichletOutput):
+                        preds = torch.argmax(out.expected_probability, dim=-1)
+                        all_uncertainties.extend(out.uncertainty.detach().cpu().numpy().tolist())
+                        all_beliefs.extend(out.belief.detach().cpu().numpy().tolist())
+                    else:
+                        preds = torch.argmax(out, dim=-1)
+                    all_preds.extend(preds.cpu().numpy().tolist())
+                    num_batches += 1
 
-                total_loss += float(loss.item())
-                all_preds.extend(preds.cpu().numpy().tolist())
-                all_targets.extend(labels.cpu().numpy().tolist())
-                num_batches += 1
+        if all_targets:
+            metrics = compute_classification_metrics(
+                np.array(all_targets), np.array(all_preds), self.class_names
+            )
+            metrics["loss"] = total_loss / max(num_batches, 1)
+            cm = confusion_matrix(np.array(all_targets), np.array(all_preds), len(self.class_names))
+            metrics["confusion_matrix"] = cm.tolist()
+        else:
+            # For OOD/unlabeled events, classification accuracy/F1 does not apply
+            metrics = {
+                "num_events": len(all_preds),
+            }
 
-        metrics = compute_classification_metrics(
-            np.array(all_targets), np.array(all_preds), self.class_names
-        )
-        metrics["loss"] = total_loss / max(num_batches, 1)
-        cm = confusion_matrix(np.array(all_targets), np.array(all_preds), len(self.class_names))
-        metrics["confusion_matrix"] = cm.tolist()
         if all_uncertainties:
             metrics["mean_uncertainty"] = float(np.mean(all_uncertainties))
             metrics["uncertainties"] = all_uncertainties
             metrics["beliefs"] = all_beliefs
         return metrics
+
 
     def fit(self, train_loader: DataLoader, val_loader: DataLoader | None = None) -> dict[str, Any]:
         """Run training across epochs; return history of per-epoch metrics."""
