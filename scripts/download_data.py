@@ -38,6 +38,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="Data root (overrides $SEISMIC_DATA_ROOT and the config).")
     parser.add_argument("--metadata-only", action="store_true",
                         help="Download metadata files only (no waveform subsets).")
+    parser.add_argument("--full", action="store_true",
+                        help="Download the complete remote HDF5 waveform files instead of the 2 GB exploration subset.")
     parser.add_argument("--collections", nargs="+", default=None,
                         help="Subset collections to extract (default: all configured).")
     parser.add_argument("--workers", type=int, default=None,
@@ -79,6 +81,21 @@ def main(argv: list[str] | None = None) -> int:
     provenance_path.write_text(json.dumps(provenance, indent=2), encoding="utf-8")
 
     if args.metadata_only:
+        return 0
+
+    if args.full:
+        collections = args.collections or list(collections_cfg.keys())
+        for collection in collections:
+            spec = collections_cfg[collection]
+            waveform_filename = spec.get("waveform_file")
+            if not waveform_filename:
+                continue
+            dest = raw_dir / waveform_filename
+            logger.info("Downloading FULL %s waveforms (%s) to %s ...", collection, waveform_filename, dest)
+            record = download_file(base_url + waveform_filename, dest, relative_to=raw_dir)
+            provenance["files"][record.path] = record.to_dict()
+            logger.info("FULL %s waveforms complete (%d bytes, sha256 %s...)", collection, record.size, record.sha256[:12])
+        provenance_path.write_text(json.dumps(provenance, indent=2), encoding="utf-8")
         return 0
 
     subset_cfg = data_cfg["dataset"]["exploration_subset"]
