@@ -114,14 +114,23 @@ def download_file(
     if not (dest.exists() and dest.stat().st_size == info.size and not overwrite):
         dest.parent.mkdir(parents=True, exist_ok=True)
         part = dest.with_name(dest.name + ".part")
-        written = 0
-        with _request(url, timeout=timeout) as resp, part.open("wb") as fh:
-            for chunk in iter(lambda: resp.read(chunk_size), b""):
-                fh.write(chunk)
-                written += len(chunk)
+        written = part.stat().st_size if part.exists() else 0
+        retries = 10
+        chunk_size = 8 * 1024 * 1024  # 8 MB chunks for fast high-throughput streaming
+        while written < info.size and retries > 0:
+            headers = {"Range": f"bytes={written}-{info.size - 1}"}
+            try:
+                with _request(url, headers=headers, timeout=timeout) as resp, part.open("ab") as fh:
+                    for chunk in iter(lambda: resp.read(chunk_size), b""):
+                        fh.write(chunk)
+                        written += len(chunk)
+            except Exception:
+                retries -= 1
+                time.sleep(2.0)
+                written = part.stat().st_size if part.exists() else 0
+
         if written != info.size:
-            part.unlink(missing_ok=True)
-            raise OSError(f"Incomplete download of {url}: {written} of {info.size} bytes.")
+            raise OSError(f"Incomplete download of {url}: {written} of {info.size} bytes. Re-run to resume.")
         os.replace(part, dest)
     return DownloadRecord(
         path=dest.resolve().relative_to(Path(relative_to).resolve()).as_posix(),
