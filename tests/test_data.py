@@ -181,6 +181,15 @@ def test_waveform_path_prefers_full_file_then_subset(toy_raw_dir: Path, data_con
         waveform_path(toy_raw_dir, data_config, "comcat")
 
 
+def test_waveform_path_prefers_balanced_subset(toy_raw_dir: Path, data_config: dict) -> None:
+    subset_dir = toy_raw_dir / "subsets"
+    subset_dir.mkdir(exist_ok=True)
+    (subset_dir / "comcat_exploration_subset.hdf5").touch()
+    (subset_dir / "comcat_balanced_splits_subset.hdf5").touch()
+    assert waveform_path(toy_raw_dir, data_config, "comcat").name == "comcat_balanced_splits_subset.hdf5"
+
+
+
 def test_unknown_collection_is_rejected(toy_raw_dir: Path, data_config: dict) -> None:
     with pytest.raises(ValueError, match="Unknown collection"):
         load_events(toy_raw_dir, data_config, collection="volcanoes")

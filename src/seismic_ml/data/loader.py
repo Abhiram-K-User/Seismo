@@ -49,12 +49,21 @@ def waveform_path(raw_dir: str | Path, data_config: Mapping[str, Any], collectio
     """
     spec = collection_config(data_config, collection)
     raw_dir = Path(raw_dir)
-    # Check in order: full file, any scaled subsets, default exploration subset
-    candidates = [spec.get("waveform_file")]
     subset_dir = raw_dir / "subsets"
+    candidates = []
     if subset_dir.exists():
-        candidates.extend([p.relative_to(raw_dir).as_posix() for p in sorted(subset_dir.glob(f"{collection}_*subset.hdf5"), reverse=True)])
+        balanced = subset_dir / f"{collection}_balanced_splits_subset.hdf5"
+        if balanced.exists():
+            candidates.append(balanced.relative_to(raw_dir).as_posix())
+        scales = sorted(subset_dir.glob(f"{collection}_scale*_subset.hdf5"), reverse=True)
+        candidates.extend([p.relative_to(raw_dir).as_posix() for p in scales])
+        all_sub = subset_dir / f"{collection}_all_subset.hdf5"
+        if all_sub.exists():
+            candidates.append(all_sub.relative_to(raw_dir).as_posix())
+    candidates.append(spec.get("waveform_file"))
     candidates.append(spec.get("subset_file"))
+    if subset_dir.exists():
+        candidates.extend([p.relative_to(raw_dir).as_posix() for p in sorted(subset_dir.glob(f"{collection}_*subset.hdf5"))])
 
     for candidate in candidates:
         if candidate and (raw_dir / candidate).exists():
