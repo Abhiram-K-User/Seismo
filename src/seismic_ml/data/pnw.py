@@ -129,6 +129,62 @@ def select_events(
     return sorted(selected)
 
 
+def select_events_balanced_temporal(
+    metadata: pd.DataFrame,
+    *,
+    label_column: str,
+    class_map: Mapping[str, str],
+    train_end: str = "2019-01-01",
+    val_end: str = "2021-01-01",
+    seed: int = 42,
+) -> list[str]:
+    """Select 100% of anthropogenic blast events, and match natural earthquakes within each temporal split.
+
+    Guarantees that train (< 2019), val (2019-2020), and test (2021+) splits are individually 50/50 balanced!
+    """
+    agg = {
+        "label": (label_column, "first"),
+        "origin_time": ("source_origin_time" if "source_origin_time" in metadata else "trace_start_time", "first"),
+        "trace_start": ("trace_start_time", "min"),
+    }
+    events = metadata.groupby("event_id", sort=True).agg(**agg).reset_index()
+    ref_time = pd.to_datetime(events["origin_time"], utc=True, format="ISO8601").fillna(
+        pd.to_datetime(events["trace_start"], utc=True, format="ISO8601")
+    )
+    events["ref_time"] = ref_time
+    events["class"] = events["label"].map(dict(class_map))
+
+    t_tr = pd.Timestamp(train_end, tz="UTC")
+    t_v = pd.Timestamp(val_end, tz="UTC")
+
+    events["split_group"] = np.where(
+        events["ref_time"] < t_tr, "train",
+        np.where(events["ref_time"] < t_v, "val", "test")
+    )
+
+    rng = np.random.default_rng(seed)
+    chosen_ids: list[str] = []
+
+    # 1. Take all non-earthquake events (anthropogenic blasts + OOD categories like lf, su, sn)
+    non_eq = events[events["class"] != "earthquake"]
+    chosen_ids.extend(non_eq["event_id"].tolist())
+
+    # 2. For each split (train, val, test), match earthquakes to the exact blast count in that split
+    for s_name in ("train", "val", "test"):
+        blasts_in_split = events[(events["split_group"] == s_name) & (events["class"] == "anthropogenic")]
+        eqs_in_split = events[(events["split_group"] == s_name) & (events["class"] == "earthquake")]
+        n_needed = len(blasts_in_split)
+        eq_pool = np.array(sorted(eqs_in_split["event_id"].unique()))
+
+        if n_needed >= len(eq_pool) or n_needed <= 0:
+            chosen_ids.extend(eq_pool.tolist())
+        else:
+            sampled = rng.choice(eq_pool, size=n_needed, replace=False)
+            chosen_ids.extend(sampled.tolist())
+
+    return sorted(set(chosen_ids))
+
+
 def _optional_float(value: Any) -> float | None:
     return None if pd.isna(value) else float(value)
 

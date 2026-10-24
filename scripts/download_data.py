@@ -23,7 +23,7 @@ from typing import Any
 
 from seismic_ml.config import load_config
 from seismic_ml.data.acquisition import download_file, sha256_file, utc_now_iso
-from seismic_ml.data.pnw import load_metadata, select_events
+from seismic_ml.data.pnw import load_metadata, select_events, select_events_balanced_temporal
 from seismic_ml.data.seisbench_format import SeisBenchWaveformStore, extract_subset
 from seismic_ml.paths import project_root_from_config, resolve_paths
 from seismic_ml.utils.logging import configure_logging
@@ -42,6 +42,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="Download the complete remote HDF5 waveform files instead of the 2 GB exploration subset.")
     parser.add_argument("--scale", type=int, default=None,
                         help="Scale factor for events per label (e.g. 5 for 5x larger dataset).")
+    parser.add_argument("--balanced-splits", action="store_true",
+                        help="Extract 100%% of blasts, and match earthquakes per temporal split (Train, Val, Test 50/50 balanced).")
     parser.add_argument("--all-events", action="store_true",
                         help="Extract all available events across all labels via parallel range requests.")
     parser.add_argument("--collections", nargs="+", default=None,
@@ -108,24 +110,44 @@ def main(argv: list[str] | None = None) -> int:
     for collection in collections:
         spec = subset_cfg[collection]
         metadata = load_metadata(raw_dir / collections_cfg[collection]["metadata_file"])
-        events_per_label = dict(spec["events_per_label"])
-        if args.all_events:
-            events_per_label = {k: -1 for k in events_per_label}
-        elif args.scale and args.scale > 1:
-            events_per_label = {
-                k: (v * args.scale if v > 0 else v) for k, v in events_per_label.items()
-            }
+        if args.balanced_splits and collection == "comcat":
+            split_cfg = data_cfg.get("split", {})
+            labels_cfg = data_cfg.get("labels", {})
+            event_ids = select_events_balanced_temporal(
+                metadata,
+                label_column=spec["label_column"],
+                class_map=labels_cfg.get("class_map", {}),
+                train_end=split_cfg.get("train_end", "2019-01-01"),
+                val_end=split_cfg.get("val_end", "2021-01-01"),
+                seed=subset_cfg["seed"],
+            )
+        else:
+            events_per_label = dict(spec["events_per_label"])
+            if args.all_events:
+                events_per_label = {k: -1 for k in events_per_label}
+            elif args.scale and args.scale > 1:
+                events_per_label = {
+                    k: (v * args.scale if v > 0 else v) for k, v in events_per_label.items()
+                }
 
-        event_ids = select_events(metadata, label_column=spec["label_column"],
-                                  events_per_label=events_per_label,
-                                  seed=subset_cfg["seed"])
+            event_ids = select_events(metadata, label_column=spec["label_column"],
+                                      events_per_label=events_per_label,
+                                      seed=subset_cfg["seed"])
         rows = metadata[metadata["event_id"].isin(set(event_ids))]
         subset_dir = raw_dir / "subsets"
         subset_dir.mkdir(exist_ok=True)
         selection_path = subset_dir / f"{collection}_exploration_selection.csv"
         rows[["event_id", spec["label_column"], "trace_name"]].to_csv(selection_path, index=False)
-        if args.scale or args.all_events:
-            suffix = "all" if args.all_events else f"scale{args.scale}"
+        if args.all_events:
+            suffix = "all"
+        elif args.balanced_splits:
+            suffix = "balanced_splits"
+        elif args.scale:
+            suffix = f"scale{args.scale}"
+        else:
+            suffix = None
+
+        if suffix:
             dest = raw_dir / "subsets" / f"{collection}_{suffix}_subset.hdf5"
         else:
             dest = raw_dir / collections_cfg[collection]["subset_file"]
