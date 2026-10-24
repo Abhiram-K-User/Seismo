@@ -49,7 +49,14 @@ def waveform_path(raw_dir: str | Path, data_config: Mapping[str, Any], collectio
     """
     spec = collection_config(data_config, collection)
     raw_dir = Path(raw_dir)
-    for candidate in (spec.get("waveform_file"), spec.get("subset_file")):
+    # Check in order: full file, any scaled subsets, default exploration subset
+    candidates = [spec.get("waveform_file")]
+    subset_dir = raw_dir / "subsets"
+    if subset_dir.exists():
+        candidates.extend([p.relative_to(raw_dir).as_posix() for p in sorted(subset_dir.glob(f"{collection}_*subset.hdf5"), reverse=True)])
+    candidates.append(spec.get("subset_file"))
+
+    for candidate in candidates:
         if candidate and (raw_dir / candidate).exists():
             return raw_dir / candidate
     raise FileNotFoundError(

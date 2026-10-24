@@ -124,9 +124,14 @@ def main(argv: list[str] | None = None) -> int:
         subset_dir.mkdir(exist_ok=True)
         selection_path = subset_dir / f"{collection}_exploration_selection.csv"
         rows[["event_id", spec["label_column"], "trace_name"]].to_csv(selection_path, index=False)
-        dest = raw_dir / collections_cfg[collection]["subset_file"]
-        logger.info("%s: %d events, %d traces selected (seed %d)", collection, len(event_ids),
-                    len(rows), subset_cfg["seed"])
+        if args.scale or args.all_events:
+            suffix = "all" if args.all_events else f"scale{args.scale}"
+            dest = raw_dir / "subsets" / f"{collection}_{suffix}_subset.hdf5"
+        else:
+            dest = raw_dir / collections_cfg[collection]["subset_file"]
+
+        logger.info("%s: %d events, %d traces selected (seed %d) -> %s", collection, len(event_ids),
+                    len(rows), subset_cfg["seed"], dest.name)
 
         wanted = set(rows["trace_name"])
         if dest.exists():
@@ -136,9 +141,15 @@ def main(argv: list[str] | None = None) -> int:
                 logger.info("%s: subset already complete, skipping download", collection)
                 summary = provenance["subsets"].get(collection, {}).get("extraction", {})
             else:
-                raise RuntimeError(f"{dest} exists but holds a different trace selection; "
-                                   "move it away to re-extract.")
+                logger.warning("%s: %s exists with different traces; removing to re-extract...", collection, dest.name)
+                dest.unlink(missing_ok=True)
+                part_path = dest.with_name(dest.name + ".part")
+                part_path.unlink(missing_ok=True)
+                summary = None
         else:
+            summary = None
+
+        if summary is None:
             step = max(1, len(wanted) // 20)
 
             def progress(done: int, total: int, _name: str = collection) -> None:
