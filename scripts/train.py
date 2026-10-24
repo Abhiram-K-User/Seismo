@@ -44,6 +44,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=None, help="Override max epochs.")
     parser.add_argument("--batch-size", type=int, default=None, help="Override batch size.")
     parser.add_argument("--lr", type=float, default=None, help="Override learning rate.")
+    parser.add_argument("--run-name", default=None, help="Custom subdirectory name for outputs under output-root.")
     parser.add_argument("--clean", action="store_true", help="Remove existing output directory before starting fresh.")
     return parser.parse_args(argv)
 
@@ -179,7 +180,8 @@ def main(argv: list[str] | None = None) -> int:
             head_type=selected_head,
             evidence_activation=args.evidence_activation,
         )
-        run_name = "proposed_gat_edl" if selected_head == "evidential" else "baseline3_gat"
+        default_run_name = "proposed_gat_edl" if selected_head == "evidential" else "baseline3_gat"
+        run_name = args.run_name or default_run_name
         logger.info(
             "Starting training %s (CNN + GATv2 [%d layers, %d heads] + %s pooling + %s head)...",
             run_name,
@@ -196,7 +198,8 @@ def main(argv: list[str] | None = None) -> int:
             head_type=selected_head,
             evidence_activation=args.evidence_activation,
         )
-        run_name = "baseline1_cnn_edl" if selected_head == "evidential" else "baseline1_cnn"
+        default_run_name = "baseline1_cnn_edl" if selected_head == "evidential" else "baseline1_cnn"
+        run_name = args.run_name or default_run_name
         logger.info("Starting training %s (CNN + %s pooling + %s head)...", run_name, station_pooling, selected_head)
 
     run_output_dir = paths.output_root / run_name
