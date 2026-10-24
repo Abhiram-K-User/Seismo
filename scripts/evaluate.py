@@ -38,6 +38,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--data-root", default=None, help="Data root directory.")
     parser.add_argument("--output-root", default=None, help="Output root directory.")
     parser.add_argument("--split", default="test", choices=["train", "val", "test", "ood"], help="Split to evaluate on.")
+    parser.add_argument("--collection", default="comcat", help="Collection to evaluate ('comcat' or 'exotic'). Default: 'comcat'.")
     parser.add_argument("--device", default=None, help="Device to use ('cpu', 'cuda', 'auto').")
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size for evaluation.")
     return parser.parse_args(argv)
@@ -72,13 +73,13 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     split_table = load_split_table(split_path)
 
-    processed_comcat_dir = paths.processed / "pnw" / "comcat"
-    if not processed_comcat_dir.exists():
-        logger.error("Processed data directory not found at %s.", processed_comcat_dir)
+    processed_data_dir = paths.processed / "pnw" / args.collection
+    if not processed_data_dir.exists():
+        logger.error("Processed data directory not found at %s.", processed_data_dir)
         return 1
 
-    dataset = ProcessedEventDataset(processed_comcat_dir, split_table, splits=[args.split])
-    logger.info("Loaded %d events from split %r", len(dataset), args.split)
+    dataset = ProcessedEventDataset(processed_data_dir, split_table, splits=[args.split])
+    logger.info("Loaded %d events from split %r (collection: %s)", len(dataset), args.split, args.collection)
 
     if len(dataset) == 0:
         logger.error("Dataset has 0 events for split %r", args.split)
