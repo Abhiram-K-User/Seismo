@@ -93,3 +93,16 @@ def test_extract_subset_rejects_unknown_rows(range_server: str, tmp_path: Path) 
     with pytest.raises(KeyError):
         extract_subset(range_server + "comcat_waveforms.hdf5", ["bucket9$0,:3,:200"],
                        tmp_path / "y.hdf5")
+
+
+def test_extract_subset_recovers_from_corrupted_part_file(range_server: str, tmp_path: Path) -> None:
+    url = range_server + "comcat_waveforms.hdf5"
+    dest = tmp_path / "corrupt_subset.hdf5"
+    part = dest.with_name(dest.name + ".part")
+    part.write_bytes(b"corrupted header data not hdf5")
+    names = ["bucket1$0,:3,:200", "bucket1$2,:3,:200"]
+    summary = extract_subset(url, names, dest, workers=1)
+    assert summary["n_traces"] == 2
+    with SeisBenchWaveformStore(dest) as sub:
+        assert sub.available_trace_names() == set(names)
+

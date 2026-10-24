@@ -195,68 +195,119 @@ def extract_subset(
         row_bytes = int(np.prod(b.shape[1:])) * b.dtype.itemsize
         jobs.append((name, loc, b.offset + loc.row * row_bytes, row_bytes))
 
-    with h5py.File(part, "r+" if part.exists() else "w") as out:
-        if "data_format" not in out:
-            out.create_group("data_format").create_dataset(
-                "component_order", data="".join(order).encode()
-            )
-        dsets = {}
-        for bucket in sorted({loc.bucket for _, loc, _, _ in jobs}):
-            b = buckets[bucket]
-            if f"data/{bucket}" in out:
-                dsets[bucket] = out[f"data/{bucket}"]
-                continue
-            fill = np.nan if np.issubdtype(b.dtype, np.floating) else 0
-            dsets[bucket] = out.create_dataset(
-                f"data/{bucket}", shape=b.shape, dtype=b.dtype,
-                chunks=(1, *b.shape[1:]), fillvalue=fill,
-            )
+    out_file = None
+    if part.exists():
+        try:
+            test = h5py.File(part, "r+")
+            _ = list(test.keys())
+            out_file = test
+        except OSError:
+            part.unlink(missing_ok=True)
+            out_file = None
+    if out_file is None:
+        out_file = h5py.File(part, "w")
 
-        pending = [job for job in jobs if not _row_written(dsets[job[1].bucket], job[1].row)]
-        done = len(jobs) - len(pending)
-        fetched = 0
+    session = None
+    try:
+        import requests
+        from requests.adapters import HTTPAdapter
 
-        def run(batch: list, n_workers: int) -> list:
-            nonlocal done, fetched
-            failed = []
-            with ThreadPoolExecutor(max_workers=n_workers) as pool:
-                futures = {}
-                for job in batch:
-                    _, _, start, length = job
-                    future = pool.submit(fetch_range, url, start, length,
-                                         timeout=timeout, retries=retries)
-                    futures[future] = job
-                for future in as_completed(futures):
-                    job = futures[future]
-                    _, loc, _, length = job
-                    try:
-                        data = future.result()
-                    except OSError:
-                        failed.append(job)
-                        continue
-                    b = buckets[loc.bucket]
-                    dsets[loc.bucket][loc.row] = np.frombuffer(data, dtype=b.dtype).reshape(b.shape[1:])
-                    done += 1
-                    fetched += length
-                    if progress is not None:
-                        progress(done, len(jobs))
-            return failed
+        session = requests.Session()
+        adapter = HTTPAdapter(
+            pool_connections=max(workers, 8),
+            pool_maxsize=max(workers, 8),
+            max_retries=retries,
+        )
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        session.headers.update({"User-Agent": "seismic-ml-research/0.1"})
+    except Exception:
+        session = None
 
-        failed = run(pending, workers)
-        if failed:
-            failed = run(failed, 1)
-        if failed:
-            out.flush()
-            raise OSError(f"{len(failed)} traces could not be fetched; re-run to resume "
-                          f"(first: {failed[0][0]}).")
+    def _fetch_one(job: tuple[str, TraceLocation, int, int]) -> bytes:
+        _, _, start, length = job
+        if session is not None:
+            end = start + length - 1
+            for attempt in range(retries):
+                try:
+                    resp = session.get(url, headers={"Range": f"bytes={start}-{end}"}, timeout=timeout)
+                    if resp.status_code != 206:
+                        raise OSError(f"Expected HTTP 206, got {resp.status_code}")
+                    content = resp.content
+                    if len(content) != length:
+                        raise OSError(f"Short range read: {len(content)} of {length} bytes")
+                    return content
+                except Exception:
+                    if attempt == retries - 1:
+                        raise
+                    import time
+                    time.sleep(2 ** attempt)
+        return fetch_range(url, start, length, timeout=timeout, retries=retries)
 
-        if "subset" in out:
-            del out["subset"]
-        subset = out.create_group("subset")
-        subset.create_dataset("trace_names", data=np.array(names, dtype=h5py.string_dtype()))
-        subset.attrs["source_url"] = url
-        subset.attrs["source_etag"] = remote.info.etag or ""
-        subset.attrs["source_last_modified"] = remote.info.last_modified or ""
+    try:
+        with out_file as out:
+            if "data_format" not in out:
+                out.create_group("data_format").create_dataset(
+                    "component_order", data="".join(order).encode()
+                )
+            dsets = {}
+            for bucket in sorted({loc.bucket for _, loc, _, _ in jobs}):
+                b = buckets[bucket]
+                if f"data/{bucket}" in out:
+                    dsets[bucket] = out[f"data/{bucket}"]
+                    continue
+                fill = np.nan if np.issubdtype(b.dtype, np.floating) else 0
+                dsets[bucket] = out.create_dataset(
+                    f"data/{bucket}", shape=b.shape, dtype=b.dtype,
+                    chunks=(1, *b.shape[1:]), fillvalue=fill,
+                )
+
+            pending = [job for job in jobs if not _row_written(dsets[job[1].bucket], job[1].row)]
+            done = len(jobs) - len(pending)
+            fetched = 0
+
+            def run(batch: list, n_workers: int) -> list:
+                nonlocal done, fetched
+                failed = []
+                with ThreadPoolExecutor(max_workers=n_workers) as pool:
+                    futures = {pool.submit(_fetch_one, job): job for job in batch}
+                    for future in as_completed(futures):
+                        job = futures[future]
+                        _, loc, _, length = job
+                        try:
+                            data = future.result()
+                        except OSError:
+                            failed.append(job)
+                            continue
+                        b = buckets[loc.bucket]
+                        dsets[loc.bucket][loc.row] = np.frombuffer(data, dtype=b.dtype).reshape(b.shape[1:])
+                        done += 1
+                        fetched += length
+                        if done % 500 == 0:
+                            out.flush()
+                        if progress is not None:
+                            progress(done, len(jobs))
+                out.flush()
+                return failed
+
+            failed = run(pending, workers)
+            if failed:
+                failed = run(failed, 1)
+            if failed:
+                out.flush()
+                raise OSError(f"{len(failed)} traces could not be fetched; re-run to resume "
+                              f"(first: {failed[0][0]}).")
+
+            if "subset" in out:
+                del out["subset"]
+            subset = out.create_group("subset")
+            subset.create_dataset("trace_names", data=np.array(names, dtype=h5py.string_dtype()))
+            subset.attrs["source_url"] = url
+            subset.attrs["source_etag"] = remote.info.etag or ""
+            subset.attrs["source_last_modified"] = remote.info.last_modified or ""
+    finally:
+        if session is not None:
+            session.close()
 
     part.replace(dest)
     return {
