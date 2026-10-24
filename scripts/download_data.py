@@ -40,6 +40,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="Download metadata files only (no waveform subsets).")
     parser.add_argument("--full", action="store_true",
                         help="Download the complete remote HDF5 waveform files instead of the 2 GB exploration subset.")
+    parser.add_argument("--scale", type=int, default=None,
+                        help="Scale factor for events per label (e.g. 5 for 5x larger dataset).")
+    parser.add_argument("--all-events", action="store_true",
+                        help="Extract all available events across all labels via parallel range requests.")
     parser.add_argument("--collections", nargs="+", default=None,
                         help="Subset collections to extract (default: all configured).")
     parser.add_argument("--workers", type=int, default=None,
@@ -104,8 +108,16 @@ def main(argv: list[str] | None = None) -> int:
     for collection in collections:
         spec = subset_cfg[collection]
         metadata = load_metadata(raw_dir / collections_cfg[collection]["metadata_file"])
+        events_per_label = dict(spec["events_per_label"])
+        if args.all_events:
+            events_per_label = {k: -1 for k in events_per_label}
+        elif args.scale and args.scale > 1:
+            events_per_label = {
+                k: (v * args.scale if v > 0 else v) for k, v in events_per_label.items()
+            }
+
         event_ids = select_events(metadata, label_column=spec["label_column"],
-                                  events_per_label=spec["events_per_label"],
+                                  events_per_label=events_per_label,
                                   seed=subset_cfg["seed"])
         rows = metadata[metadata["event_id"].isin(set(event_ids))]
         subset_dir = raw_dir / "subsets"
