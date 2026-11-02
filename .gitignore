@@ -69,4 +69,5 @@ reports/
 *.docx
 *.pdf
 scripts/generate_docx_report.py
+PROJECT_DEFENSE_AND_DEMO_GUIDE.md
 
