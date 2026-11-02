@@ -58,15 +58,29 @@ def load_model_and_samples():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     state["device"] = device
 
-    encoder = CNNEncoder(embedding_dim=64, in_channels=3, pool_time=True)
-    gat = GAT(in_dim=64, hidden_dim=64, out_dim=64, num_heads=4, num_layers=2, dropout=0.1)
+    embedding_dim = 64
+    k_neighbors = 4
+    if DEFAULT_CKPT.exists():
+        try:
+            ckpt = torch.load(DEFAULT_CKPT, map_location="cpu")
+            s = ckpt.get("model_state_dict", ckpt)
+            if "classifier.linear.weight" in s:
+                embedding_dim = s["classifier.linear.weight"].shape[1]
+            elif "encoder.proj.weight" in s:
+                embedding_dim = s["encoder.proj.weight"].shape[0]
+            print(f"[UI] Detected embedding_dim={embedding_dim} from checkpoint.")
+        except Exception as e:
+            print(f"[UI] Warning inspecting checkpoint: {e}")
+
+    encoder = CNNEncoder(embedding_dim=embedding_dim, in_channels=3, pool_time=True)
+    gat = GAT(in_dim=embedding_dim, hidden_dim=embedding_dim, out_dim=embedding_dim, num_heads=4, num_layers=2, dropout=0.1)
     model = GATClassifier(
         encoder=encoder,
         gat=gat,
         num_classes=2,
         station_pooling="attention",
         graph_method="knn",
-        k_neighbors=4,
+        k_neighbors=k_neighbors,
         head_type="evidential",
         evidence_activation="softplus",
     )
@@ -1755,7 +1769,7 @@ HTML_PAGE = """<!DOCTYPE html>
       const isOOD = out.ground_truth === 'out-of-distribution';
       const u = out.evidential.vacuity_uncertainty;
 
-      if (isOOD || u >= 0.40) {
+      if (isOOD || (u >= 0.45 && out.confidence < 75.0)) {
         card.classList.add('ood');
         label.textContent = 'OUT-OF-DISTRIBUTION ANOMALY';
         sub.innerHTML = `Model detected unfamiliar source mechanics. Automated classification suspended (u = <b>${u.toFixed(4)}</b>).`;
