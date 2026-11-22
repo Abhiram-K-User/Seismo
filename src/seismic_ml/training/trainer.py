@@ -19,7 +19,9 @@ from torch import nn
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
+from seismic_ml.evaluation.calibration import brier_score, expected_calibration_error
 from seismic_ml.evaluation.classification import compute_classification_metrics, confusion_matrix
+from seismic_ml.evaluation.ood import area_under_risk_coverage, risk_coverage_curve
 from seismic_ml.training.losses import annealing_coefficient, cross_entropy_loss, evidential_loss
 from seismic_ml.uncertainty.dirichlet import DirichletOutput
 
@@ -178,6 +180,7 @@ class Trainer:
         total_loss = 0.0
         all_preds: list[int] = []
         all_targets: list[int] = []
+        all_probs: list[list[float]] = []
         all_uncertainties: list[float] = []
         all_beliefs: list[list[float]] = []
         num_batches = 0
@@ -201,14 +204,17 @@ class Trainer:
 
                     if isinstance(out, DirichletOutput):
                         loss = evidential_loss(out.alpha, eval_labels, variant=self.edl_variant, regularization_weight=0.0)
-                        preds = torch.argmax(out.expected_probability, dim=-1)
+                        probs = out.expected_probability
+                        preds = torch.argmax(probs, dim=-1)
                         all_uncertainties.extend(out.uncertainty.detach().cpu().numpy().tolist())
                         all_beliefs.extend(out.belief.detach().cpu().numpy().tolist())
                     else:
                         loss = cross_entropy_loss(out, eval_labels, class_weights=self.class_weights)
-                        preds = torch.argmax(out, dim=-1)
+                        probs = torch.softmax(out, dim=-1)
+                        preds = torch.argmax(probs, dim=-1)
 
                     total_loss += float(loss.item())
+                    all_probs.extend(probs.detach().cpu().numpy().tolist())
                     all_preds.extend(preds.cpu().numpy().tolist())
                     all_targets.extend(eval_labels.cpu().numpy().tolist())
                     num_batches += 1
@@ -216,25 +222,45 @@ class Trainer:
                     # Unlabeled / Out-Of-Distribution evaluation
                     out = self.model(waveforms, station_mask=station_mask, coordinates=coordinates)
                     if isinstance(out, DirichletOutput):
-                        preds = torch.argmax(out.expected_probability, dim=-1)
+                        probs = out.expected_probability
+                        preds = torch.argmax(probs, dim=-1)
                         all_uncertainties.extend(out.uncertainty.detach().cpu().numpy().tolist())
                         all_beliefs.extend(out.belief.detach().cpu().numpy().tolist())
                     else:
-                        preds = torch.argmax(out, dim=-1)
+                        probs = torch.softmax(out, dim=-1)
+                        preds = torch.argmax(probs, dim=-1)
+                    all_probs.extend(probs.detach().cpu().numpy().tolist())
                     all_preds.extend(preds.cpu().numpy().tolist())
                     num_batches += 1
 
         if all_targets:
-            metrics = compute_classification_metrics(
-                np.array(all_targets), np.array(all_preds), self.class_names
-            )
+            targets_np = np.array(all_targets, dtype=np.int64)
+            preds_np = np.array(all_preds, dtype=np.int64)
+            probs_np = np.array(all_probs, dtype=np.float64)
+
+            metrics = compute_classification_metrics(targets_np, preds_np, self.class_names)
             metrics["loss"] = total_loss / max(num_batches, 1)
-            cm = confusion_matrix(np.array(all_targets), np.array(all_preds), len(self.class_names))
+            metrics["ece"] = expected_calibration_error(probs_np, targets_np, num_bins=10)
+            metrics["brier_score"] = brier_score(probs_np, targets_np)
+
+            # Selective prediction AURC using vacuity (EDL) or 1 - max_prob (Softmax)
+            unc_for_rc = (
+                np.array(all_uncertainties, dtype=np.float64)
+                if len(all_uncertainties) == len(targets_np)
+                else 1.0 - np.max(probs_np, axis=1)
+            )
+            rc_curve = risk_coverage_curve(unc_for_rc, preds_np == targets_np)
+            metrics["aurc"] = area_under_risk_coverage(rc_curve)
+
+            cm = confusion_matrix(targets_np, preds_np, len(self.class_names))
             metrics["confusion_matrix"] = cm.tolist()
+            metrics["probabilities"] = all_probs
+            metrics["targets"] = all_targets
         else:
             # For OOD/unlabeled events, classification accuracy/F1 does not apply
             metrics = {
                 "num_events": len(all_preds),
+                "probabilities": all_probs,
             }
 
         if all_uncertainties:

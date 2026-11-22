@@ -81,20 +81,29 @@ def test_validation_helpers() -> None:
         check_choice("c", "z", ("a", "b"))
 
 
-def test_visualization_later_phase_placeholders() -> None:
-    from seismic_ml.placeholders import NotYetImplementedError
-    from seismic_ml.utils.visualization import plot_reliability_diagram
+def test_plot_reliability_diagram() -> None:
+    pytest.importorskip("matplotlib")
+    from seismic_ml.utils.visualization import plot_reliability_diagram, plot_risk_coverage_curve
 
-    calls = [
-        (9, lambda: plot_reliability_diagram(np.zeros(3), np.zeros(3), np.zeros(3))),
-    ]
-    for phase, call in calls:
-        with pytest.raises(NotYetImplementedError) as info:
-            call()
-        assert info.value.phase == phase
+    fig = plot_reliability_diagram(
+        np.array([0.2, 0.5, 0.8]),
+        np.array([0.25, 0.5, 0.75]),
+        np.array([4, 10, 6]),
+    )
+    assert fig is not None
+    assert len(fig.axes) == 1
+
+    fig_rc = plot_risk_coverage_curve(
+        np.array([0.25, 0.5, 0.75, 1.0]),
+        np.array([0.0, 0.02, 0.05, 0.10]),
+        aurc=0.03,
+    )
+    assert fig_rc is not None
+    assert len(fig_rc.axes) == 1
 
 
 def test_plot_attention_weights() -> None:
+    pytest.importorskip("matplotlib")
     from seismic_ml.utils.visualization import plot_attention_weights
 
     # Test 2D attention

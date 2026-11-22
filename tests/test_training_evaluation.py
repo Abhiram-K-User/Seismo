@@ -8,10 +8,12 @@ import torch
 from torch import nn
 
 from seismic_ml.evaluation import (
+    area_under_risk_coverage,
     brier_score,
     compute_classification_metrics,
     confusion_matrix,
     expected_calibration_error,
+    id_quantile_threshold,
     ood_auprc,
     ood_auroc,
     ood_detection_rate,
@@ -89,18 +91,48 @@ def test_classification_metrics() -> None:
     assert cm[1, 1] == 2  # true 1, pred 1
 
 
-def test_calibration_and_ood_metrics_are_placeholders() -> None:
-    probs = np.full((4, 2), 0.5)
-    labels = np.zeros(4, dtype=int)
-    scores = np.zeros(4)
-    calls = [
-        lambda: expected_calibration_error(probs, labels, num_bins=10),
-        lambda: brier_score(probs, labels),
-        lambda: reliability_curve(probs, labels, num_bins=10),
-        lambda: ood_auroc(scores, scores),
-        lambda: ood_auprc(scores, scores),
-        lambda: ood_detection_rate(scores, threshold=0.5),
-        lambda: risk_coverage_curve(scores, labels.astype(bool)),
-    ]
-    for call in calls:
-        _assert_placeholder(call, phase=9)
+def test_calibration_metrics_phase9() -> None:
+    # Perfectly confident and accurate predictions -> ECE = 0, Brier = 0
+    probs_perfect = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]])
+    labels = np.array([0, 1, 0, 1])
+
+    assert expected_calibration_error(probs_perfect, labels, num_bins=5) == pytest.approx(0.0)
+    assert brier_score(probs_perfect, labels) == pytest.approx(0.0)
+
+    rel = reliability_curve(probs_perfect, labels, num_bins=5)
+    assert len(rel.bin_confidence) == 5
+    assert int(np.sum(rel.bin_counts)) == 4
+    assert rel.bin_accuracy[-1] == pytest.approx(1.0)
+    assert rel.bin_confidence[-1] == pytest.approx(1.0)
+
+    # Completely wrong with 0.9 confidence -> ECE = 0.9, Brier = (0.9^2 + 0.9^2) = 1.62
+    probs_wrong = np.array([[0.1, 0.9], [0.9, 0.1]])
+    labels_wrong = np.array([0, 1])
+    assert expected_calibration_error(probs_wrong, labels_wrong, num_bins=10) == pytest.approx(0.9)
+    assert brier_score(probs_wrong, labels_wrong) == pytest.approx(1.62)
+
+
+def test_ood_and_selective_prediction_metrics_phase9() -> None:
+    # Perfect OOD separation: all OOD scores > all ID scores
+    in_scores = np.array([0.10, 0.15, 0.20, 0.25, 0.30])
+    ood_scores = np.array([0.45, 0.55, 0.65, 0.80])
+
+    assert ood_auroc(in_scores, ood_scores) == pytest.approx(1.0)
+    assert ood_auprc(in_scores, ood_scores) == pytest.approx(1.0)
+
+    tau = id_quantile_threshold(in_scores, id_tpr=0.80)
+    assert 0.25 <= tau <= 0.30
+    assert ood_detection_rate(ood_scores, threshold=tau) == pytest.approx(1.0)
+
+    # Identical distributions -> AUROC = 0.5
+    same = np.array([0.2, 0.4, 0.6, 0.8])
+    assert ood_auroc(same, same) == pytest.approx(0.5)
+
+    # Selective prediction risk-coverage: low uncertainty samples are correct, highest is wrong
+    unc = np.array([0.1, 0.2, 0.3, 0.8])
+    correct = np.array([True, True, True, False])
+    rc = risk_coverage_curve(unc, correct)
+    assert np.allclose(rc.coverage, [0.25, 0.50, 0.75, 1.00])
+    assert np.allclose(rc.risk, [0.0, 0.0, 0.0, 0.25])
+    aurc = area_under_risk_coverage(rc)
+    assert 0.0 < aurc < 0.05
