@@ -418,8 +418,9 @@ def classify_event(req: ClassifyRequest):
     uncertainty = float(out.uncertainty[0].item())
     belief = out.belief[0].cpu().numpy()
 
-    p_eq = float(probs[0])
-    p_anth = float(probs[1])
+    # In the trained model checkpoint, index 0 is anthropogenic (blast) and index 1 is earthquake
+    p_anth = float(probs[0])
+    p_eq = float(probs[1])
     predicted_class = "earthquake" if p_eq > p_anth else "anthropogenic"
     confidence = max(p_eq, p_anth)
 
@@ -439,11 +440,11 @@ def classify_event(req: ClassifyRequest):
             "anthropogenic": round(p_anth, 4),
         },
         "evidential": {
-            "evidence": {"earthquake": round(float(evidence[0]), 4), "anthropogenic": round(float(evidence[1]), 4)},
-            "alpha": [round(float(alpha[0]), 4), round(float(alpha[1]), 4)],
+            "evidence": {"earthquake": round(float(evidence[1]), 4), "anthropogenic": round(float(evidence[0]), 4)},
+            "alpha": [round(float(alpha[1]), 4), round(float(alpha[0]), 4)],
             "strength": round(strength, 4),
             "vacuity_uncertainty": round(uncertainty, 4),
-            "belief": {"earthquake": round(float(belief[0]), 4), "anthropogenic": round(float(belief[1]), 4)},
+            "belief": {"earthquake": round(float(belief[1]), 4), "anthropogenic": round(float(belief[0]), 4)},
         },
         "stations_used": [st["id"] for st in stations_filtered],
         "attention_matrix": attn_matrix,
