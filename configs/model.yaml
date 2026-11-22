@@ -16,10 +16,11 @@ graph:                            # Stage B — Phase 5 (static), Phase 7 (dynam
   enabled: false
   type: spatial                   # spatial | waveform_similarity | dynamic
   spatial:
-    method: knn                   # knn | radius | gaussian_kernel | fully_connected
+    method: knn                   # knn | quadrant_knn | radius | gaussian_kernel | fully_connected
     k_neighbors: 5
     radius_km: 150.0
     sigma_km: 50.0
+    vp_km_s: 6.2                  # crustal P-wave velocity for kinematic edge travel-time features
   waveform_similarity:
     method: cosine                # cosine | xcorr
     max_lag_s: 2.0
@@ -32,6 +33,7 @@ gat:                              # Stage C — Phase 6
   num_heads: 4
   num_layers: 2
   dropout: 0.1
+  edge_dim: 0                     # 0 = connectivity mask only; 4 = kinematic [dist, dt_p, cos_az, sin_az]
 
 stgnn:                            # Stage D — Phase 7
   enabled: false

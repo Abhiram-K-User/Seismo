@@ -163,6 +163,40 @@ def test_gat_classifier_forward() -> None:
     assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in model.parameters())
 
 
+def test_gat_classifier_with_kinematic_edges() -> None:
+    encoder = CNNEncoder(embedding_dim=D)
+    gat = GAT(D, 32, 32, num_heads=4, num_layers=2, dropout=0.1, edge_dim=4)
+    model = GATClassifier(
+        encoder=encoder,
+        gat=gat,
+        num_classes=2,
+        station_pooling="attention",
+        graph_method="quadrant_knn",
+        k_neighbors=4,
+        head_type="evidential",
+    )
+
+    waveforms = torch.randn(B, N, C, T)
+    coords = torch.tensor([
+        [[47.0, -122.0], [47.2, -121.8], [46.8, -122.2], [47.3, -122.3]],
+        [[47.0, -122.0], [47.2, -121.8], [46.8, -122.2], [47.3, -122.3]],
+    ])
+    mask = torch.ones(B, N, dtype=torch.bool)
+    mask[:, -1] = False
+
+    out, attn = model(waveforms, station_mask=mask, coordinates=coords, return_attention=True)
+    assert isinstance(out, DirichletOutput)
+    assert out.expected_probability.shape == (B, 2)
+    assert attn is not None and len(attn) == 2
+
+    loss = out.alpha.sum()
+    loss.backward()
+    for layer in gat.layers:
+        assert layer.lin_edge is not None
+        assert layer.lin_edge.weight.grad is not None
+        assert layer.lin_edge.weight.grad.abs().sum() > 0
+
+
 @pytest.mark.parametrize("dropout", [-0.1, 1.0])
 def test_gat_rejects_invalid_dropout(dropout: float) -> None:
     with pytest.raises(ValueError):

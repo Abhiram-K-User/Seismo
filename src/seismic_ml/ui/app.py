@@ -65,6 +65,7 @@ def load_model_and_samples():
 
     embedding_dim = 64
     k_neighbors = 4
+    edge_dim = 0
     if DEFAULT_CKPT.exists():
         try:
             ckpt = torch.load(DEFAULT_CKPT, map_location="cpu")
@@ -73,12 +74,14 @@ def load_model_and_samples():
                 embedding_dim = s["classifier.linear.weight"].shape[1]
             elif "encoder.proj.weight" in s:
                 embedding_dim = s["encoder.proj.weight"].shape[0]
-            print(f"[UI] Detected embedding_dim={embedding_dim} from checkpoint.")
+            if "gat.layers.0.lin_edge.weight" in s:
+                edge_dim = int(s["gat.layers.0.lin_edge.weight"].shape[1])
+            print(f"[UI] Detected embedding_dim={embedding_dim}, edge_dim={edge_dim} from checkpoint.")
         except Exception as e:
             print(f"[UI] Warning inspecting checkpoint: {e}")
 
     encoder = CNNEncoder(embedding_dim=embedding_dim, in_channels=3, pool_time=True)
-    gat = GAT(in_dim=embedding_dim, hidden_dim=embedding_dim, out_dim=embedding_dim, num_heads=4, num_layers=2, dropout=0.1)
+    gat = GAT(in_dim=embedding_dim, hidden_dim=embedding_dim, out_dim=embedding_dim, num_heads=4, num_layers=2, dropout=0.1, edge_dim=edge_dim)
     model = GATClassifier(
         encoder=encoder,
         gat=gat,

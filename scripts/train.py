@@ -44,6 +44,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=None, help="Override max epochs.")
     parser.add_argument("--batch-size", type=int, default=None, help="Override batch size.")
     parser.add_argument("--lr", type=float, default=None, help="Override learning rate.")
+    parser.add_argument(
+        "--graph-method",
+        choices=["knn", "quadrant_knn", "radius", "gaussian_kernel", "fully_connected"],
+        default=None,
+        help="Override spatial graph construction method.",
+    )
+    parser.add_argument(
+        "--edge-dim",
+        type=int,
+        default=None,
+        help="Kinematic edge feature dimension for GATv2 (e.g. 4 for [d, dt_p, cos_az, sin_az], 0 to disable).",
+    )
     parser.add_argument("--run-name", default=None, help="Custom subdirectory name for outputs under output-root.")
     parser.add_argument("--clean", action="store_true", help="Remove existing output directory before starting fresh.")
     return parser.parse_args(argv)
@@ -159,6 +171,9 @@ def main(argv: list[str] | None = None) -> int:
         num_heads = int(gat_cfg.get("num_heads") or 4)
         num_layers = int(gat_cfg.get("num_layers") or 2)
         dropout = float(gat_cfg.get("dropout") or 0.1)
+        edge_dim = int(args.edge_dim if args.edge_dim is not None else (gat_cfg.get("edge_dim") or 0))
+        graph_method = args.graph_method or spatial_cfg.get("method") or "knn"
+        vp_km_s = float(spatial_cfg.get("vp_km_s") or 6.2)
 
         gat = GAT(
             in_dim=embedding_dim,
@@ -167,26 +182,30 @@ def main(argv: list[str] | None = None) -> int:
             num_heads=num_heads,
             num_layers=num_layers,
             dropout=dropout,
+            edge_dim=edge_dim,
         )
         model = GATClassifier(
             encoder=encoder,
             gat=gat,
             num_classes=len(class_names),
             station_pooling=station_pooling,
-            graph_method=spatial_cfg.get("method") or "knn",
+            graph_method=graph_method,
             k_neighbors=int(spatial_cfg.get("k_neighbors") or 5),
             radius_km=spatial_cfg.get("radius_km"),
             sigma_km=spatial_cfg.get("sigma_km"),
             head_type=selected_head,
             evidence_activation=args.evidence_activation,
+            vp_km_s=vp_km_s,
         )
         default_run_name = "proposed_gat_edl" if selected_head == "evidential" else "baseline3_gat"
         run_name = args.run_name or default_run_name
         logger.info(
-            "Starting training %s (CNN + GATv2 [%d layers, %d heads] + %s pooling + %s head)...",
+            "Starting training %s (CNN + GATv2 [%d layers, %d heads, graph=%s, edge_dim=%d] + %s pooling + %s head)...",
             run_name,
             num_layers,
             num_heads,
+            graph_method,
+            edge_dim,
             station_pooling,
             selected_head,
         )

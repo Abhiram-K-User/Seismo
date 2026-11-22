@@ -15,7 +15,11 @@ import torch.nn.functional as F
 from torch import nn
 
 from seismic_ml.features.cnn_encoder import CNNEncoder
-from seismic_ml.graph.construction import build_spatial_graph
+from seismic_ml.graph.construction import (
+    DEFAULT_VP_KM_S,
+    build_kinematic_edge_features,
+    build_spatial_graph,
+)
 from seismic_ml.models.cnn import HEAD_TYPES, STATION_POOLING, StationAttentionPooling
 from seismic_ml.models.edl import EvidentialClassifier
 from seismic_ml.uncertainty.dirichlet import DirichletOutput
@@ -45,11 +49,13 @@ class GATv2Layer(nn.Module):
         out_dim: int,
         num_heads: int = 4,
         dropout: float = 0.0,
+        edge_dim: int = 0,
     ) -> None:
         super().__init__()
         self.in_dim = in_dim
         self.out_dim = out_dim
         self.num_heads = num_heads
+        self.edge_dim = check_int("edge_dim", edge_dim, minimum=0)
 
         if out_dim % num_heads != 0:
             raise ValueError(f"out_dim ({out_dim}) must be divisible by num_heads ({num_heads}).")
@@ -58,6 +64,9 @@ class GATv2Layer(nn.Module):
         self.lin_l = nn.Linear(in_dim, out_dim, bias=False)  # Receiver projection
         self.lin_r = nn.Linear(in_dim, out_dim, bias=False)  # Sender projection
         self.lin_v = nn.Linear(in_dim, out_dim, bias=False)  # Value projection
+        self.lin_edge: nn.Linear | None = (
+            nn.Linear(self.edge_dim, out_dim, bias=False) if self.edge_dim > 0 else None
+        )
 
         # Attention vector a_h and bias
         self.attn_vec = nn.Parameter(torch.empty(num_heads, self.head_dim))
@@ -77,6 +86,7 @@ class GATv2Layer(nn.Module):
         x: torch.Tensor,
         adjacency: torch.Tensor | None = None,
         station_mask: torch.Tensor | None = None,
+        edge_attr: torch.Tensor | None = None,
         *,
         return_attention: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
@@ -86,6 +96,7 @@ class GATv2Layer(nn.Module):
             x: Node features ``[B, N, in_dim]``.
             adjacency: Adjacency matrix ``[B, N, N]`` (non-negative, >0 indicates edge).
             station_mask: Bool mask ``[B, N]`` where True indicates a real station.
+            edge_attr: Optional edge feature tensor ``[B, N, N, edge_dim]``.
             return_attention: Whether to return the attention weights ``[B, H, N, N]``.
 
         Returns:
@@ -101,9 +112,16 @@ class GATv2Layer(nn.Module):
         kr = self.lin_r(x).view(b, n, h, d)
         val = self.lin_v(x).view(b, n, h, d)
 
-        # GATv2 score: a^T * LeakyReLU(Q_i + K_j + bias)
+        # GATv2 score: a^T * LeakyReLU(Q_i + K_j + E_ij + bias)
         # Q_i: [B, N, 1, H, d], K_j: [B, 1, N, H, d]
         sum_qk = ql.unsqueeze(2) + kr.unsqueeze(1) + self.attn_bias.view(1, 1, 1, h, d)
+        if self.lin_edge is not None and edge_attr is not None:
+            if edge_attr.shape[-1] != self.edge_dim:
+                raise ValueError(
+                    f"Expected edge_attr last dim {self.edge_dim}, got {edge_attr.shape[-1]}."
+                )
+            e_proj = self.lin_edge(edge_attr).view(b, n, n, h, d)
+            sum_qk = sum_qk + e_proj
         act = F.leaky_relu(sum_qk, negative_slope=0.2)
         # Dot product with attention vector: [B, N, N, H]
         scores = (act * self.attn_vec.view(1, 1, 1, h, d)).sum(dim=-1)
@@ -174,6 +192,7 @@ class GAT(nn.Module):
         num_heads: int,
         num_layers: int,
         dropout: float = 0.0,
+        edge_dim: int = 0,
     ) -> None:
         super().__init__()
         self.in_dim = check_int("in_dim", in_dim)
@@ -182,6 +201,7 @@ class GAT(nn.Module):
         self.num_heads = check_int("num_heads", num_heads)
         self.num_layers = check_int("num_layers", num_layers, minimum=1)
         self.dropout = check_dropout("dropout", dropout)
+        self.edge_dim = check_int("edge_dim", edge_dim, minimum=0)
 
         layers: list[GATv2Layer] = []
         for i in range(self.num_layers):
@@ -193,6 +213,7 @@ class GAT(nn.Module):
                     out_dim=layer_out,
                     num_heads=self.num_heads,
                     dropout=self.dropout,
+                    edge_dim=self.edge_dim,
                 )
             )
         self.layers = nn.ModuleList(layers)
@@ -202,6 +223,7 @@ class GAT(nn.Module):
         node_features: torch.Tensor,
         adjacency: torch.Tensor | None = None,
         station_mask: torch.Tensor | None = None,
+        edge_attr: torch.Tensor | None = None,
         *,
         return_attention: bool = False,
     ) -> GATOutput:
@@ -214,6 +236,7 @@ class GAT(nn.Module):
                 x,
                 adjacency=adjacency,
                 station_mask=station_mask,
+                edge_attr=edge_attr,
                 return_attention=return_attention,
             )
             if return_attention and attn is not None:
@@ -250,6 +273,7 @@ class GATClassifier(nn.Module):
         sigma_km: float | None = None,
         head_type: str = "softmax",
         evidence_activation: str = "softplus",
+        vp_km_s: float = DEFAULT_VP_KM_S,
     ) -> None:
         super().__init__()
         if not isinstance(encoder, CNNEncoder):
@@ -271,6 +295,7 @@ class GATClassifier(nn.Module):
         self.k_neighbors = k_neighbors
         self.radius_km = radius_km
         self.sigma_km = sigma_km
+        self.vp_km_s = float(vp_km_s)
 
         if self.station_pooling == "attention":
             self.pool_module = StationAttentionPooling(self.gat.out_dim)
@@ -324,6 +349,7 @@ class GATClassifier(nn.Module):
         station_mask: torch.Tensor | None = None,
         coordinates: torch.Tensor | None = None,
         adjacency: torch.Tensor | None = None,
+        edge_attr: torch.Tensor | None = None,
         *,
         return_attention: bool = False,
         **kwargs: object,
@@ -335,6 +361,7 @@ class GATClassifier(nn.Module):
             station_mask: ``[B, N]`` bool mask of real stations.
             coordinates: ``[B, N, 2]`` station coordinates (lat, lon) in degrees.
             adjacency: Optional precomputed adjacency matrix ``[B, N, N]``.
+            edge_attr: Optional precomputed kinematic edge features ``[B, N, N, E]``.
             return_attention: If True, returns ``(output, attention_weights)``.
 
         Returns:
@@ -343,7 +370,7 @@ class GATClassifier(nn.Module):
         # 1. Encode per-station waveforms into node features
         station_emb = self.encoder(waveforms, station_mask=station_mask)  # [B, N, D]
 
-        # 2. Build spatial graph if not provided
+        # 2. Build spatial graph and kinematic edge features if not provided
         if adjacency is None and coordinates is not None:
             adjacency = build_spatial_graph(
                 coordinates,
@@ -354,11 +381,20 @@ class GATClassifier(nn.Module):
                 station_mask=station_mask,
             )
 
+        if edge_attr is None and self.gat.edge_dim > 0 and coordinates is not None:
+            kin_edges = build_kinematic_edge_features(
+                coordinates,
+                station_mask=station_mask,
+                vp_km_s=self.vp_km_s,
+            )
+            edge_attr = kin_edges[..., : self.gat.edge_dim]
+
         # 3. GATv2 message passing between stations
         gat_out = self.gat(
             station_emb,
             adjacency=adjacency,
             station_mask=station_mask,
+            edge_attr=edge_attr,
             return_attention=return_attention,
         )
 

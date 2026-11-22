@@ -54,6 +54,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Optional OOD collection (e.g. 'exotic') to jointly evaluate OOD AUROC, AUPRC, and detection rate against --split.",
     )
     parser.add_argument("--ood-split", default="ood", help="Split name inside --ood-collection (default: 'ood').")
+    parser.add_argument(
+        "--graph-method",
+        choices=["knn", "quadrant_knn", "radius", "gaussian_kernel", "fully_connected"],
+        default=None,
+        help="Override spatial graph construction method.",
+    )
+    parser.add_argument(
+        "--edge-dim",
+        type=int,
+        default=None,
+        help="Override GATv2 edge_dim (auto-detected from checkpoint when omitted).",
+    )
     parser.add_argument("--device", default=None, help="Device to use ('cpu', 'cuda', 'auto').")
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size for evaluation.")
     return parser.parse_args(argv)
@@ -140,6 +152,23 @@ def main(argv: list[str] | None = None) -> int:
         num_layers = int(gat_cfg.get("num_layers") or 2)
         dropout = float(gat_cfg.get("dropout") or 0.1)
 
+        # Auto-detect edge_dim from checkpoint if present
+        detected_edge_dim = int(gat_cfg.get("edge_dim") or 0)
+        if args.edge_dim is not None:
+            detected_edge_dim = int(args.edge_dim)
+        elif args.checkpoint.exists():
+            try:
+                raw_ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+                ckpt_sd = raw_ckpt.get("model_state_dict", raw_ckpt)
+                if "gat.layers.0.lin_edge.weight" in ckpt_sd:
+                    detected_edge_dim = int(ckpt_sd["gat.layers.0.lin_edge.weight"].shape[1])
+                    logger.info("Auto-detected edge_dim=%d from checkpoint.", detected_edge_dim)
+            except Exception as exc:
+                logger.warning("Could not inspect checkpoint for edge_dim: %s", exc)
+
+        graph_method = args.graph_method or spatial_cfg.get("method") or "knn"
+        vp_km_s = float(spatial_cfg.get("vp_km_s") or 6.2)
+
         gat = GAT(
             in_dim=embedding_dim,
             hidden_dim=hidden_dim,
@@ -147,17 +176,19 @@ def main(argv: list[str] | None = None) -> int:
             num_heads=num_heads,
             num_layers=num_layers,
             dropout=dropout,
+            edge_dim=detected_edge_dim,
         )
         model = GATClassifier(
             encoder=encoder,
             gat=gat,
             num_classes=len(class_names),
             station_pooling=station_pooling,
-            graph_method=spatial_cfg.get("method") or "knn",
+            graph_method=graph_method,
             k_neighbors=int(spatial_cfg.get("k_neighbors") or 5),
             radius_km=spatial_cfg.get("radius_km"),
             sigma_km=spatial_cfg.get("sigma_km"),
             head_type=head_type,
+            vp_km_s=vp_km_s,
         )
     else:
         model = CNNBaseline(
