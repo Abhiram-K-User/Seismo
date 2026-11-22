@@ -63,6 +63,24 @@ def test_cnn_encoder_pool_time_false() -> None:
     assert out.shape == (B, N, T, D)
 
 
+@pytest.mark.parametrize("repr_mode", ["spectrogram", "dual"])
+def test_cnn_encoder_spectrogram_and_dual_stream(repr_mode: str) -> None:
+    # 60s @ 50 Hz = 3000 samples (or shorter synthetic trace >= n_fft)
+    encoder = CNNEncoder(embedding_dim=32, in_channels=3, input_representation=repr_mode)
+    x = torch.randn(2, 3, 3, 512)
+    mask = torch.tensor([[True, True, False], [True, False, False]])
+
+    out = encoder(x, station_mask=mask)
+    assert out.shape == (2, 3, 32)
+    assert torch.isfinite(out).all()
+    assert torch.all(out[0, 2] == 0.0)
+    assert torch.all(out[1, 1:] == 0.0)
+
+    loss = out.sum()
+    loss.backward()
+    assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in encoder.parameters())
+
+
 # --- CNNBaseline -------------------------------------------------------------
 
 

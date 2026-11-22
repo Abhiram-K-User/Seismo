@@ -130,9 +130,32 @@ def main(argv: list[str] | None = None) -> int:
     encoder_cfg = model_cfg.get("encoder", {})
     embedding_dim = int(encoder_cfg.get("embedding_dim") or 128)
     in_channels = int(encoder_cfg.get("in_channels") or 3)
+    input_repr = encoder_cfg.get("input_representation") or "waveform"
     station_pooling = model_cfg.get("station_pooling") or "attention"
 
-    encoder = CNNEncoder(embedding_dim=embedding_dim, in_channels=in_channels, pool_time=True)
+    detected_edge_dim = int((model_cfg.get("gat") or {}).get("edge_dim") or 0)
+    if args.checkpoint.exists():
+        try:
+            raw_ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+            ckpt_sd = raw_ckpt.get("model_state_dict", raw_ckpt)
+            if "gat.layers.0.lin_edge.weight" in ckpt_sd:
+                detected_edge_dim = int(ckpt_sd["gat.layers.0.lin_edge.weight"].shape[1])
+                logger.info("Auto-detected edge_dim=%d from checkpoint.", detected_edge_dim)
+            if "encoder.fusion.out_proj.weight" in ckpt_sd:
+                input_repr = "dual"
+                logger.info("Auto-detected dual-stream encoder from checkpoint.")
+            elif "encoder.spec_branch.net.0.weight" in ckpt_sd and "encoder.init_conv.0.weight" not in ckpt_sd:
+                input_repr = "spectrogram"
+                logger.info("Auto-detected spectrogram encoder from checkpoint.")
+        except Exception as exc:
+            logger.warning("Could not inspect checkpoint architecture: %s", exc)
+
+    encoder = CNNEncoder(
+        embedding_dim=embedding_dim,
+        in_channels=in_channels,
+        input_representation=input_repr,
+        pool_time=True,
+    )
 
     ckpt_str = str(args.checkpoint).lower()
     if args.model == "auto":
@@ -152,19 +175,8 @@ def main(argv: list[str] | None = None) -> int:
         num_layers = int(gat_cfg.get("num_layers") or 2)
         dropout = float(gat_cfg.get("dropout") or 0.1)
 
-        # Auto-detect edge_dim from checkpoint if present
-        detected_edge_dim = int(gat_cfg.get("edge_dim") or 0)
         if args.edge_dim is not None:
             detected_edge_dim = int(args.edge_dim)
-        elif args.checkpoint.exists():
-            try:
-                raw_ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-                ckpt_sd = raw_ckpt.get("model_state_dict", raw_ckpt)
-                if "gat.layers.0.lin_edge.weight" in ckpt_sd:
-                    detected_edge_dim = int(ckpt_sd["gat.layers.0.lin_edge.weight"].shape[1])
-                    logger.info("Auto-detected edge_dim=%d from checkpoint.", detected_edge_dim)
-            except Exception as exc:
-                logger.warning("Could not inspect checkpoint for edge_dim: %s", exc)
 
         graph_method = args.graph_method or spatial_cfg.get("method") or "knn"
         vp_km_s = float(spatial_cfg.get("vp_km_s") or 6.2)

@@ -56,6 +56,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Kinematic edge feature dimension for GATv2 (e.g. 4 for [d, dt_p, cos_az, sin_az], 0 to disable).",
     )
+    parser.add_argument(
+        "--input-representation",
+        choices=["waveform", "spectrogram", "dual"],
+        default=None,
+        help="Encoder input representation: 'waveform' (1D TCN), 'spectrogram' (2D STFT), or 'dual' (1D+2D cross-attention).",
+    )
+    parser.add_argument(
+        "--station-dropout",
+        type=float,
+        default=0.0,
+        help="Stochastic station dropout probability during training (e.g. 0.25).",
+    )
+    parser.add_argument(
+        "--ood-exposure-weight",
+        type=float,
+        default=0.0,
+        help="Weight for Out-of-Distribution Exposure KL regularization on non-seismic noise/phase-scrambled signals.",
+    )
     parser.add_argument("--run-name", default=None, help="Custom subdirectory name for outputs under output-root.")
     parser.add_argument("--clean", action="store_true", help="Remove existing output directory before starting fresh.")
     return parser.parse_args(argv)
@@ -122,6 +140,10 @@ def main(argv: list[str] | None = None) -> int:
         config.setdefault("training", {})["max_epochs"] = args.epochs
     if args.lr is not None:
         config.setdefault("training", {}).setdefault("optimizer", {})["lr"] = args.lr
+    if args.station_dropout > 0.0:
+        config.setdefault("training", {})["station_dropout"] = args.station_dropout
+    if args.ood_exposure_weight > 0.0:
+        config.setdefault("training", {})["ood_exposure_weight"] = args.ood_exposure_weight
 
     class_names = config.get("data", {}).get("labels", {}).get("class_names") or [
         "earthquake",
@@ -152,11 +174,13 @@ def main(argv: list[str] | None = None) -> int:
     encoder_cfg = model_cfg.get("encoder", {})
     embedding_dim = int(encoder_cfg.get("embedding_dim") or 128)
     in_channels = int(encoder_cfg.get("in_channels") or 3)
+    input_repr = args.input_representation or encoder_cfg.get("input_representation") or "waveform"
     station_pooling = model_cfg.get("station_pooling") or "attention"
 
     encoder = CNNEncoder(
         embedding_dim=embedding_dim,
         in_channels=in_channels,
+        input_representation=input_repr,
         pool_time=True,
     )
 

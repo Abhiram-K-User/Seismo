@@ -134,3 +134,21 @@ def evidential_loss(
         return data_loss + regularization_weight * kl_reg
 
     return data_loss
+
+
+def ood_exposure_loss(alpha: torch.Tensor) -> torch.Tensor:
+    """Out-of-distribution exposure regularizer: ``KL(Dir(alpha) || Dir(1))``.
+
+    Penalizes ALL class evidence on known non-seismic transients, phase-scrambled
+    signals, or ambient noise, driving ``alpha -> 1`` and epistemic vacuity ``u -> 1``.
+    """
+    b, k = alpha.shape
+    device = alpha.device
+    s = torch.sum(alpha, dim=-1, keepdim=True)
+    term1 = (
+        torch.lgamma(s).squeeze(-1)
+        - torch.lgamma(torch.tensor(float(k), device=device, dtype=alpha.dtype))
+        - torch.sum(torch.lgamma(alpha), dim=-1)
+    )
+    term2 = torch.sum((alpha - 1.0) * (torch.digamma(alpha) - torch.digamma(s)), dim=-1)
+    return torch.mean(term1 + term2)

@@ -6,7 +6,12 @@ import pytest
 import torch
 
 from seismic_ml.placeholders import NotYetImplementedError
-from seismic_ml.training.losses import annealing_coefficient, evidential_loss, kl_dirichlet_regularizer
+from seismic_ml.training.losses import (
+    annealing_coefficient,
+    evidential_loss,
+    kl_dirichlet_regularizer,
+    ood_exposure_loss,
+)
 from seismic_ml.uncertainty import (
     DirichletOutput,
     belief_masses,
@@ -129,6 +134,10 @@ def test_kl_dirichlet_regularizer() -> None:
     kl_misleading = kl_dirichlet_regularizer(alpha_misleading, targets)
 
     assert kl_misleading.item() > kl_clean.item()
+
+    # OOD exposure loss: zero at Dir([1, 1]), positive when any evidence > 0
+    assert ood_exposure_loss(torch.tensor([[1.0, 1.0]])).item() == pytest.approx(0.0, abs=1e-6)
+    assert ood_exposure_loss(torch.tensor([[5.0, 1.0]])).item() > 0.0
 
 
 def test_annealing_coefficient() -> None:

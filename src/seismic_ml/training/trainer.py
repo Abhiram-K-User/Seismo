@@ -22,7 +22,12 @@ from tqdm.auto import tqdm
 from seismic_ml.evaluation.calibration import brier_score, expected_calibration_error
 from seismic_ml.evaluation.classification import compute_classification_metrics, confusion_matrix
 from seismic_ml.evaluation.ood import area_under_risk_coverage, risk_coverage_curve
-from seismic_ml.training.losses import annealing_coefficient, cross_entropy_loss, evidential_loss
+from seismic_ml.training.losses import (
+    annealing_coefficient,
+    cross_entropy_loss,
+    evidential_loss,
+    ood_exposure_loss,
+)
 from seismic_ml.uncertainty.dirichlet import DirichletOutput
 
 logger = logging.getLogger("seismic_ml.training")
@@ -93,6 +98,51 @@ class Trainer:
         self.edl_variant = (edl_cfg.get("variant") if edl_cfg else None) or "digamma"
         self.annealing_epochs = int((edl_cfg.get("kl_annealing_epochs") if edl_cfg else None) or 10)
         self.kl_weight = float((edl_cfg.get("kl_weight") if edl_cfg else None) or 1.0)
+        self.station_dropout = float(train_cfg.get("station_dropout") or 0.0)
+        self.ood_exposure_weight = float(train_cfg.get("ood_exposure_weight") or 0.0)
+
+    def _apply_station_dropout(self, station_mask: torch.Tensor) -> torch.Tensor:
+        """Randomly drop up to ``station_dropout`` valid stations per event, keeping >= 1."""
+        if self.station_dropout <= 0.0:
+            return station_mask
+        mask = station_mask.clone()
+        b, n = mask.shape
+        for i in range(b):
+            valid_idx = torch.where(mask[i])[0]
+            if len(valid_idx) <= 1:
+                continue
+            keep_probs = torch.rand(len(valid_idx), device=mask.device)
+            dropped = valid_idx[keep_probs < self.station_dropout]
+            if len(dropped) >= len(valid_idx):
+                # Always keep at least 1 valid station
+                keep_one = valid_idx[torch.randint(len(valid_idx), (1,), device=mask.device)]
+                mask[i, dropped] = False
+                mask[i, keep_one] = True
+            else:
+                mask[i, dropped] = False
+        return mask
+
+    def _make_ood_exposure_batch(
+        self,
+        waveforms: torch.Tensor,
+        station_mask: torch.Tensor,
+        coordinates: torch.Tensor | None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        """Generate synthetic non-seismic exposure traces (ambient noise + phase-scrambled)."""
+        n_oe = max(1, min(4, waveforms.shape[0] // 4 or 1))
+        oe_wfs = waveforms[:n_oe].clone()
+        oe_mask = station_mask[:n_oe].clone()
+        oe_coords = coordinates[:n_oe].clone() if coordinates is not None else None
+
+        # Half pure Gaussian ambient noise, half FFT phase-scrambled traces (destroys P/S kinematics)
+        half = max(1, n_oe // 2)
+        oe_wfs[:half] = torch.randn_like(oe_wfs[:half])
+        if n_oe > half:
+            spec = torch.fft.rfft(oe_wfs[half:], dim=-1)
+            rand_phase = torch.exp(1j * 2.0 * torch.pi * torch.rand_like(spec.real))
+            oe_wfs[half:] = torch.fft.irfft(spec.abs() * rand_phase, n=oe_wfs.shape[-1], dim=-1)
+
+        return oe_wfs, oe_mask, oe_coords
 
     def train_epoch(self, loader: DataLoader, *, current_epoch: int = 1, pbar: Any = None) -> dict[str, float]:
         """Run one training epoch; return aggregated metrics."""
@@ -126,12 +176,20 @@ class Trainer:
             if coordinates is not None:
                 coordinates = coordinates[valid_mask]
 
+            # Optional stochastic station dropout during training (Monograph §11 / Gap 3)
+            train_mask = self._apply_station_dropout(station_mask)
+
             self.optimizer.zero_grad()
-            out = self.model(waveforms, station_mask=station_mask, coordinates=coordinates)
+            out = self.model(waveforms, station_mask=train_mask, coordinates=coordinates)
 
             if isinstance(out, DirichletOutput):
                 reg_weight = self.kl_weight * annealing_coefficient(current_epoch, self.annealing_epochs)
                 loss = evidential_loss(out.alpha, labels, variant=self.edl_variant, regularization_weight=reg_weight)
+                if self.ood_exposure_weight > 0.0:
+                    oe_wfs, oe_mask, oe_coords = self._make_ood_exposure_batch(waveforms, station_mask, coordinates)
+                    oe_out = self.model(oe_wfs, station_mask=oe_mask, coordinates=oe_coords)
+                    if isinstance(oe_out, DirichletOutput):
+                        loss = loss + (self.ood_exposure_weight * reg_weight) * ood_exposure_loss(oe_out.alpha)
                 preds = torch.argmax(out.expected_probability, dim=-1)
                 all_uncertainties.extend(out.uncertainty.detach().cpu().numpy().tolist())
             else:
