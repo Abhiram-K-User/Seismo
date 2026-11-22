@@ -189,51 +189,44 @@ def build_kinematic_edge_features(
     return edge_attr.squeeze(0) if was_2d else edge_attr
 
 
-def _select_quadrant_neighbors(
+def _select_quadrant_neighbors_tensor(
     sub_dist: torch.Tensor,
     sub_az: torch.Tensor,
     k_eff: int,
-) -> list[list[int]]:
-    """Pick up to ``k_eff`` neighbors per node balanced across four 90° azimuth quadrants."""
-    m = sub_dist.shape[0]
-    selected_per_node: list[list[int]] = []
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Vectorized quadrant-balanced kNN selection on ``[M, M]`` submatrices.
 
-    for row in range(m):
-        dists = sub_dist[row]
-        azs = sub_az[row]
-        # Map angle in (-pi, pi] into quadrant 0..3
-        quadrants = torch.floor(((azs + math.pi) % (2.0 * math.pi)) / (0.5 * math.pi)).to(torch.int64)
-        chosen: list[int] = []
-        chosen_set: set[int] = {row}
+    Picks up to ``k_eff`` neighbors per node balanced across four 90° azimuth
+    sectors without any Python per-node loops or ``.item()`` CPU-GPU syncs.
 
-        # Pass 1: closest neighbor in each quadrant (round-robin up to k_eff)
-        per_q_sorted: list[list[int]] = []
-        for q in range(4):
-            q_nodes = [
-                int(c)
-                for c in torch.argsort(dists).tolist()
-                if c != row and int(quadrants[c].item()) == q and math.isfinite(float(dists[c].item()))
-            ]
-            per_q_sorted.append(q_nodes)
+    Returns:
+        ``(indices [M, k_eff], valid_mask [M, k_eff])``.
+    """
+    sorted_dists, order = torch.sort(sub_dist, dim=-1)
+    q_ordered = torch.gather(
+        torch.floor(((sub_az + math.pi) % (2.0 * math.pi)) / (0.5 * math.pi)).to(torch.int64).clamp(0, 3),
+        dim=-1,
+        index=order,
+    )
 
-        ptr = [0, 0, 0, 0]
-        while len(chosen) < k_eff:
-            progressed = False
-            for q in range(4):
-                if len(chosen) >= k_eff:
-                    break
-                if ptr[q] < len(per_q_sorted[q]):
-                    cand = per_q_sorted[q][ptr[q]]
-                    ptr[q] += 1
-                    if cand not in chosen_set:
-                        chosen.append(cand)
-                        chosen_set.add(cand)
-                        progressed = True
-            if not progressed:
-                break
+    # Within-quadrant rank (0, 1, 2, ...) computed globally via vectorized cumsum
+    rank_in_ordered = torch.zeros_like(q_ordered)
+    for q in range(4):
+        is_q = q_ordered == q
+        rank_q = torch.cumsum(is_q.to(torch.int64), dim=-1) - 1
+        rank_in_ordered = torch.where(is_q, rank_q, rank_in_ordered)
 
-        selected_per_node.append(chosen)
-    return selected_per_node
+    # Sort priority: (within-quadrant rank, distance) -> takes closest from all 4 quadrants first
+    finite_mask = torch.isfinite(sorted_dists)
+    composite = torch.where(
+        finite_mask,
+        rank_in_ordered.to(sorted_dists.dtype) * 1e6 + sorted_dists,
+        torch.full_like(sorted_dists, float("inf")),
+    )
+    top_scores, top_pos = torch.topk(composite, k=k_eff, largest=False, dim=-1)
+    indices = torch.gather(order, dim=-1, index=top_pos)
+    valid_mask = torch.isfinite(top_scores)
+    return indices, valid_mask
 
 
 def build_spatial_graph(
@@ -318,15 +311,14 @@ def build_spatial_graph(
             else:
                 assert az is not None
                 sub_az = az[i][valid_idx][:, valid_idx]
-                chosen_lists = _select_quadrant_neighbors(sub_dist, sub_az, k_eff)
-                for row_pos, nbr_list in enumerate(chosen_lists):
-                    if not nbr_list:
-                        continue
-                    nbr_idx_t = torch.tensor(nbr_list, dtype=torch.long, device=device)
+                indices, vmask = _select_quadrant_neighbors_tensor(sub_dist, sub_az, k_eff)
+                nbr_dists = torch.gather(sub_dist, dim=-1, index=indices)
+                weights = torch.where(vmask, 1.0 / torch.clamp(nbr_dists, min=eps), torch.zeros_like(nbr_dists))
+                for row_pos in range(num_valid):
                     u = valid_idx[row_pos]
-                    v = valid_idx[nbr_idx_t]
-                    w = 1.0 / torch.clamp(sub_dist[row_pos, nbr_idx_t], min=eps)
-                    adj[i, u, v] = w
+                    v = valid_idx[indices[row_pos]]
+                    w = weights[row_pos]
+                    adj[i, u, v] = torch.maximum(adj[i, u, v], w)
                     adj[i, v, u] = torch.maximum(adj[i, v, u], w)
 
     elif method == "radius":

@@ -19,7 +19,7 @@ import torch
 
 from seismic_ml.config import load_config
 from seismic_ml.data.loader import create_dataloader
-from seismic_ml.data.processed import ProcessedEventDataset
+from seismic_ml.data.processed import FastProcessedDataset
 from seismic_ml.data.splits import load_split_table
 from seismic_ml.features.cnn_encoder import CNNEncoder
 from seismic_ml.models.cnn import CNNBaseline
@@ -74,6 +74,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=0.0,
         help="Weight for Out-of-Distribution Exposure KL regularization on non-seismic noise/phase-scrambled signals.",
     )
+    parser.add_argument(
+        "--cache-ram",
+        action="store_true",
+        help="Load preprocessed train/val waveforms into RAM once (~1.3 GB) for zero disk I/O.",
+    )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=None,
+        help="DataLoader worker processes (default: from config, e.g. 2 on Colab).",
+    )
+    parser.add_argument(
+        "--amp",
+        action="store_true",
+        help="Enable bfloat16 Tensor Core mixed precision on CUDA (L4/A100).",
+    )
     parser.add_argument("--run-name", default=None, help="Custom subdirectory name for outputs under output-root.")
     parser.add_argument("--clean", action="store_true", help="Remove existing output directory before starting fresh.")
     return parser.parse_args(argv)
@@ -125,13 +141,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    train_dataset = ProcessedEventDataset(processed_comcat_dir, split_table, splits=["train"])
-    val_dataset = ProcessedEventDataset(processed_comcat_dir, split_table, splits=["val"])
-    logger.info("Loaded datasets: %d train events, %d val events", len(train_dataset), len(val_dataset))
-
-    if len(train_dataset) == 0:
-        logger.error("No training events found in the processed store.")
-        return 1
+    class_names = config.get("data", {}).get("labels", {}).get("class_names") or [
+        "earthquake",
+        "anthropogenic",
+    ]
 
     # Configuration overrides
     train_cfg = config.get("training", {})
@@ -144,14 +157,40 @@ def main(argv: list[str] | None = None) -> int:
         config.setdefault("training", {})["station_dropout"] = args.station_dropout
     if args.ood_exposure_weight > 0.0:
         config.setdefault("training", {})["ood_exposure_weight"] = args.ood_exposure_weight
+    if args.amp:
+        config.setdefault("training", {})["amp"] = True
 
-    class_names = config.get("data", {}).get("labels", {}).get("class_names") or [
-        "earthquake",
-        "anthropogenic",
-    ]
+    train_dataset = FastProcessedDataset(
+        processed_comcat_dir,
+        split_table,
+        splits=["train"],
+        class_names=class_names,
+        cache_in_memory=args.cache_ram,
+    )
+    val_dataset = FastProcessedDataset(
+        processed_comcat_dir,
+        split_table,
+        splits=["val"],
+        class_names=class_names,
+        cache_in_memory=args.cache_ram,
+    )
+    logger.info(
+        "Loaded datasets: %d train events, %d val events (cache_ram=%s)",
+        len(train_dataset),
+        len(val_dataset),
+        args.cache_ram,
+    )
+
+    if len(train_dataset) == 0:
+        logger.error("No training events found in the processed store.")
+        return 1
 
     # Data loaders
-    num_workers = int(train_cfg.get("num_workers") or 0)
+    num_workers = int(args.num_workers if args.num_workers is not None else (train_cfg.get("num_workers") or 0))
+    if args.cache_ram and num_workers > 0:
+        # In-RAM slicing takes microseconds; single-process avoids duplicating 1.3 GB RAM across workers
+        num_workers = 0
+    pin_mem = device.startswith("cuda")
     train_loader = create_dataloader(
         train_dataset,
         batch_size=batch_size,
@@ -159,6 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         class_names=class_names,
         num_workers=num_workers,
         seed=seed,
+        pin_memory=pin_mem,
     )
     val_loader = create_dataloader(
         val_dataset,
@@ -167,6 +207,7 @@ def main(argv: list[str] | None = None) -> int:
         class_names=class_names,
         num_workers=num_workers,
         seed=seed,
+        pin_memory=pin_mem,
     )
 
     # Model architecture selection
@@ -296,10 +337,8 @@ def main(argv: list[str] | None = None) -> int:
             logger.info("Saved validation confusion matrix graph to %s", cm_path)
 
         # If evidential, save uncertainty distribution histogram
-        if selected_head == "evidential" and "uncertainties" in val_eval:
-            val_targets = [val_dataset[i].label for i in range(len(val_dataset))]
-            target_indices = [class_names.index(lbl) for lbl in val_targets]
-            u_fig = plot_uncertainty_distribution(val_eval["uncertainties"], target_indices, class_names)
+        if selected_head == "evidential" and "uncertainties" in val_eval and "targets" in val_eval:
+            u_fig = plot_uncertainty_distribution(val_eval["uncertainties"], val_eval["targets"], class_names)
             u_path = run_output_dir / "val_uncertainty_distribution.png"
             u_fig.savefig(u_path, dpi=200, bbox_inches="tight")
             plt.close(u_fig)

@@ -17,8 +17,8 @@ import yaml
 
 import pnw_fixture
 from seismic_ml.data import pnw
-from seismic_ml.data.loader import collate_events
-from seismic_ml.data.processed import ProcessedEventDataset, write_processed_collection
+from seismic_ml.data.loader import collate_events, collate_fast_events
+from seismic_ml.data.processed import FastProcessedDataset, ProcessedEventDataset, write_processed_collection
 from seismic_ml.data.seisbench_format import SeisBenchWaveformStore
 from seismic_ml.data.splits import load_split_table
 
@@ -108,6 +108,25 @@ def test_prepare_data_script_end_to_end(repo_root: Path, long_toy_root: Path, tm
     assert tuple(batch.waveforms.shape) == (3, 2, 3, 1000)       # N = largest event (2)
     assert batch.station_mask.sum(dim=1).tolist() == [2, 1, 2]   # uw1 lost its late-P trace
     assert batch.channel_mask[0].tolist()[0] == [False, False, True]   # CC.CCC vertical-only
+
+    # Verify FastProcessedDataset (both HDF5 and RAM-cached) produces bit-exact EventBatch
+    for cache_ram in (False, True):
+        fast_train = FastProcessedDataset(
+            processed / "pnw" / "comcat",
+            split,
+            ["train"],
+            class_names=["earthquake", "anthropogenic"],
+            cache_in_memory=cache_ram,
+        )
+        fast_batch = collate_fast_events([fast_train[i] for i in range(len(fast_train))])
+        assert fast_batch.event_ids == batch.event_ids
+        assert fast_batch.station_ids == batch.station_ids
+        assert np.array_equal(fast_batch.waveforms.numpy(), batch.waveforms.numpy())
+        assert np.array_equal(fast_batch.station_mask.numpy(), batch.station_mask.numpy())
+        assert np.array_equal(fast_batch.channel_mask.numpy(), batch.channel_mask.numpy())
+        assert np.array_equal(fast_batch.coordinates.numpy(), batch.coordinates.numpy())
+        assert np.array_equal(fast_batch.labels.numpy(), batch.labels.numpy())
+        fast_train.close()
     train.close()
 
     ood = ProcessedEventDataset(processed / "pnw" / "exotic", split, ["ood"])

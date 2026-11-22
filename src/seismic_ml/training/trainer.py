@@ -100,6 +100,7 @@ class Trainer:
         self.kl_weight = float((edl_cfg.get("kl_weight") if edl_cfg else None) or 1.0)
         self.station_dropout = float(train_cfg.get("station_dropout") or 0.0)
         self.ood_exposure_weight = float(train_cfg.get("ood_exposure_weight") or 0.0)
+        self.use_amp = bool(train_cfg.get("amp") or False) and self.device.type == "cuda"
 
     def _apply_station_dropout(self, station_mask: torch.Tensor) -> torch.Tensor:
         """Randomly drop up to ``station_dropout`` valid stations per event, keeping >= 1."""
@@ -180,20 +181,23 @@ class Trainer:
             train_mask = self._apply_station_dropout(station_mask)
 
             self.optimizer.zero_grad()
-            out = self.model(waveforms, station_mask=train_mask, coordinates=coordinates)
+            with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=self.use_amp):
+                out = self.model(waveforms, station_mask=train_mask, coordinates=coordinates)
 
             if isinstance(out, DirichletOutput):
                 reg_weight = self.kl_weight * annealing_coefficient(current_epoch, self.annealing_epochs)
-                loss = evidential_loss(out.alpha, labels, variant=self.edl_variant, regularization_weight=reg_weight)
+                alpha_f32 = out.alpha.float()
+                loss = evidential_loss(alpha_f32, labels, variant=self.edl_variant, regularization_weight=reg_weight)
                 if self.ood_exposure_weight > 0.0:
                     oe_wfs, oe_mask, oe_coords = self._make_ood_exposure_batch(waveforms, station_mask, coordinates)
-                    oe_out = self.model(oe_wfs, station_mask=oe_mask, coordinates=oe_coords)
+                    with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=self.use_amp):
+                        oe_out = self.model(oe_wfs, station_mask=oe_mask, coordinates=oe_coords)
                     if isinstance(oe_out, DirichletOutput):
-                        loss = loss + (self.ood_exposure_weight * reg_weight) * ood_exposure_loss(oe_out.alpha)
+                        loss = loss + (self.ood_exposure_weight * reg_weight) * ood_exposure_loss(oe_out.alpha.float())
                 preds = torch.argmax(out.expected_probability, dim=-1)
-                all_uncertainties.extend(out.uncertainty.detach().cpu().numpy().tolist())
+                all_uncertainties.extend(out.uncertainty.detach().float().cpu().numpy().tolist())
             else:
-                loss = cross_entropy_loss(out, labels, class_weights=self.class_weights)
+                loss = cross_entropy_loss(out.float(), labels, class_weights=self.class_weights)
                 preds = torch.argmax(out, dim=-1)
 
             loss.backward()

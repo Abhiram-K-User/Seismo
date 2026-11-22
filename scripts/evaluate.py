@@ -18,7 +18,7 @@ import torch
 
 from seismic_ml.config import load_config
 from seismic_ml.data.loader import create_dataloader
-from seismic_ml.data.processed import ProcessedEventDataset
+from seismic_ml.data.processed import FastProcessedDataset
 from seismic_ml.data.splits import load_split_table
 from seismic_ml.evaluation.calibration import reliability_curve
 from seismic_ml.evaluation.ood import (
@@ -105,17 +105,24 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("Processed data directory not found at %s.", processed_data_dir)
         return 1
 
-    dataset = ProcessedEventDataset(processed_data_dir, split_table, splits=[args.split])
+    class_names = config.get("data", {}).get("labels", {}).get("class_names") or [
+        "earthquake",
+        "anthropogenic",
+    ]
+
+    dataset = FastProcessedDataset(
+        processed_data_dir,
+        split_table,
+        splits=[args.split],
+        class_names=class_names,
+        allow_unlabeled=(args.split == "ood"),
+        cache_in_memory=True,
+    )
     logger.info("Loaded %d events from split %r (collection: %s)", len(dataset), args.split, args.collection)
 
     if len(dataset) == 0:
         logger.error("Dataset has 0 events for split %r", args.split)
         return 1
-
-    class_names = config.get("data", {}).get("labels", {}).get("class_names") or [
-        "earthquake",
-        "anthropogenic",
-    ]
 
     loader = create_dataloader(
         dataset,
@@ -123,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
         shuffle=False,
         class_names=class_names,
         allow_unlabeled=(args.split == "ood"),
+        pin_memory=device.startswith("cuda"),
     )
 
     # Determine model architecture
@@ -227,7 +235,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.ood_collection:
         ood_data_dir = paths.processed / "pnw" / args.ood_collection
         if ood_data_dir.exists():
-            ood_dataset = ProcessedEventDataset(ood_data_dir, split_table, splits=[args.ood_split])
+            ood_dataset = FastProcessedDataset(
+                ood_data_dir,
+                split_table,
+                splits=[args.ood_split],
+                class_names=class_names,
+                allow_unlabeled=True,
+                cache_in_memory=True,
+            )
             if len(ood_dataset) > 0:
                 logger.info(
                     "Loaded %d OOD events from split %r (collection: %s)",
@@ -241,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
                     shuffle=False,
                     class_names=class_names,
                     allow_unlabeled=True,
+                    pin_memory=device.startswith("cuda"),
                 )
                 ood_metrics = trainer.evaluate(ood_loader)
                 import numpy as np
