@@ -453,303 +453,931 @@ def classify_event(req: ClassifyRequest):
     }
 
 
-# Polished, Minimalistic UI
+# Tectonic Light-Mode UI with Themed Landing Page
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SEISMO — Multi-Station Seismic Classifier</title>
+  <title>SEISMO — Evidential Multi-Station Seismic Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #090d16;
-      --card: #0f172a;
-      --card-inner: #0b1120;
-      --border: #1e293b;
-      --border-light: #334155;
-      --text: #f1f5f9;
-      --text-muted: #94a3b8;
-      --text-dim: #64748b;
-      --eq: #10b981;
-      --eq-bg: rgba(16, 185, 129, 0.12);
-      --anth: #f59e0b;
-      --anth-bg: rgba(245, 158, 11, 0.12);
-      --ood: #a855f7;
-      --ood-bg: rgba(168, 85, 247, 0.12);
-      --cyan: #06b6d4;
-      --blue: #3b82f6;
-      --red: #ef4444;
-      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --bg: #f8f6f2;
+      --bg-subtle: #f1ede6;
+      --card: #ffffff;
+      --card-inner: #faf8f5;
+      --border: #e5e0d8;
+      --border-strong: #d4cdc2;
+      --text: #18181b;
+      --text-secondary: #47474f;
+      --text-muted: #6c6c75;
+      --text-dim: #8f8f99;
+
+      --accent: #d94e28;
+      --accent-hover: #bd3e1c;
+      --accent-soft: #fef2ee;
+      --accent-border: #f8cbbd;
+
+      --eq: #059669;
+      --eq-bg: #ecfdf5;
+      --eq-border: #a7f3d0;
+
+      --anth: #d97706;
+      --anth-bg: #fffbeb;
+      --anth-border: #fde68a;
+
+      --ood: #7c3aed;
+      --ood-bg: #f5f3ff;
+      --ood-border: #ddd6fe;
+
+      --cyan: #0284c7;
+      --blue: #2563eb;
+      --red: #dc2626;
+
+      --shadow-sm: 0 1px 2px rgba(24, 24, 27, 0.04);
+      --shadow-md: 0 6px 24px rgba(24, 24, 27, 0.05), 0 1px 3px rgba(24, 24, 27, 0.03);
+      --shadow-lg: 0 16px 40px rgba(24, 24, 27, 0.08), 0 2px 6px rgba(24, 24, 27, 0.04);
+
+      --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
     }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
     body {
-      background: var(--bg);
+      background-color: var(--bg);
+      background-image:
+        radial-gradient(circle at 12% 10%, rgba(217, 78, 40, 0.05) 0%, transparent 38%),
+        radial-gradient(circle at 88% 85%, rgba(5, 150, 105, 0.05) 0%, transparent 40%),
+        linear-gradient(to right, rgba(24, 24, 27, 0.025) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(24, 24, 27, 0.025) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
       color: var(--text);
       font-family: var(--font-sans);
-      font-size: 13px;
-      line-height: 1.5;
-      padding: 16px;
+      font-size: 14px;
+      line-height: 1.6;
+      min-height: 100vh;
       -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
     }
-    .container { max-width: 1280px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
 
-    /* Header */
-    header {
+    /* Ambient Tectonic Cracks Background Layer */
+    .ambient-cracks {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+      opacity: 0.42;
+    }
+
+    /* Top Sticky Glass Navigation */
+    .top-nav {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(248, 246, 242, 0.85);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-inner {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 14px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #18181b 0%, #2e2a27 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(24, 24, 27, 0.16);
+      position: relative;
+      overflow: hidden;
+    }
+    .brand-title {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.1;
+    }
+    .brand-title h1 {
+      font-family: var(--font-display);
+      font-size: 19px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      color: var(--text);
+    }
+    .brand-title span {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--accent);
+      font-weight: 600;
+      letter-spacing: 0.4px;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .nav-link {
+      background: transparent;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 9px;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+    .nav-link:hover {
+      background: rgba(24, 24, 27, 0.05);
+      color: var(--text);
+    }
+    .nav-link.active {
+      background: var(--card);
+      color: var(--accent);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border);
+    }
+
+    .meta-bar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--text-muted);
       background: var(--card);
       border: 1px solid var(--border);
+      padding: 6px 14px;
+      border-radius: 999px;
+      box-shadow: var(--shadow-sm);
+    }
+    .meta-bar b { color: var(--text); font-weight: 600; }
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--eq);
+      margin-right: 6px;
+      box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.18);
+      animation: pulse-dot 2.4s infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.18); }
+      50% { box-shadow: 0 0 0 6px rgba(5, 150, 105, 0.05); }
+    }
+
+    /* Main Container */
+    .view-container {
+      position: relative;
+      z-index: 1;
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 36px 28px 64px;
+    }
+
+    .hidden-view { display: none !important; }
+
+    /* ==================== LANDING PAGE ==================== */
+    .landing-hero {
+      display: grid;
+      grid-template-columns: 1.08fr 1fr;
+      gap: 48px;
+      align-items: center;
+      padding: 20px 0 40px;
+    }
+    @media (max-width: 1024px) {
+      .landing-hero { grid-template-columns: 1fr; gap: 36px; }
+    }
+
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      border: 1px solid var(--accent-border);
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      margin-bottom: 22px;
+    }
+
+    .hero-title {
+      font-family: var(--font-display);
+      font-size: clamp(36px, 4.8vw, 56px);
+      font-weight: 700;
+      line-height: 1.06;
+      letter-spacing: -1.4px;
+      color: var(--text);
+      margin-bottom: 20px;
+    }
+    .hero-title .accent-word {
+      color: var(--accent);
+      position: relative;
+      display: inline-block;
+    }
+    .hero-title .accent-word::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -4px;
+      height: 6px;
+      background-image: url("data:image/svg+xml,%3Csvg width='180' height='8' viewBox='0 0 180 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 5L22 2L44 6L68 1.5L96 5.5L124 2L152 6.5L179 2.5' stroke='%23D94E28' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-size: 100% 100%;
+    }
+
+    .hero-desc {
+      font-size: 16px;
+      line-height: 1.7;
+      color: var(--text-secondary);
+      max-width: 560px;
+      margin-bottom: 30px;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 32px;
+    }
+
+    .btn-hero-primary {
+      background: var(--text);
+      color: #ffffff;
+      border: 1px solid var(--text);
+      border-radius: 12px;
+      padding: 14px 26px;
+      font-family: var(--font-sans);
+      font-size: 14.5px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 8px 22px rgba(24, 24, 27, 0.16);
+      transition: all 0.2s ease;
+    }
+    .btn-hero-primary:hover {
+      background: var(--accent);
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 12px 28px rgba(217, 78, 40, 0.28);
+    }
+
+    .btn-hero-secondary {
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+      border-radius: 12px;
+      padding: 14px 22px;
+      font-family: var(--font-sans);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: var(--shadow-sm);
+      transition: all 0.2s ease;
+    }
+    .btn-hero-secondary:hover {
+      border-color: var(--text);
+      background: #ffffff;
+      transform: translateY(-1px);
+    }
+
+    .hero-trust-row {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }
+    .trust-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .trust-val {
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .trust-lbl {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    /* Live Hero Seismograph Showcase Card */
+    .hero-visual-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 24px;
+      box-shadow: var(--shadow-lg);
+      position: relative;
+      overflow: hidden;
+    }
+    .hero-visual-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--accent), var(--anth), var(--eq));
+    }
+    .hero-crack-overlay {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 200px;
+      height: 180px;
+      pointer-events: none;
+      opacity: 0.14;
+    }
+    .hero-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .live-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border: 1px solid var(--accent-border);
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+    .live-pulse {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: blink-pulse 1.5s infinite;
+    }
+    @keyframes blink-pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.25); }
+    }
+    .hero-canvas-frame {
+      background: #fcfbf8;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      position: relative;
+    }
+    canvas#hero-seismo-canvas {
+      display: block;
+      width: 100%;
+      height: 250px;
+    }
+    .hero-card-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .mini-metric {
+      background: var(--card-inner);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+    .mini-metric-lbl {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+    }
+    .mini-metric-val {
+      font-family: var(--font-mono);
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* Tectonic Crack Section Divider */
+    .fault-divider-wrap {
+      width: 100%;
+      margin: 28px 0 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .fault-divider-wrap svg {
+      width: 100%;
+      height: 28px;
+      display: block;
+    }
+
+    /* Landing Architecture & Features Grid */
+    .section-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .section-kicker {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .section-h2 {
+      font-family: var(--font-display);
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.6px;
+      color: var(--text);
+    }
+
+    .pillar-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-bottom: 44px;
+    }
+    @media (max-width: 960px) {
+      .pillar-grid { grid-template-columns: 1fr; }
+    }
+    .pillar-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow: var(--shadow-md);
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .pillar-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-lg);
+      border-color: var(--accent-border);
+    }
+    .pillar-crack {
+      position: absolute;
+      bottom: -4px;
+      right: -4px;
+      width: 110px;
+      height: 90px;
+      opacity: 0.08;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .pillar-card:hover .pillar-crack { opacity: 0.2; }
+    .pillar-num {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border: 1px solid var(--accent-border);
+      display: inline-block;
+      padding: 4px 10px;
       border-radius: 8px;
-      padding: 12px 18px;
+      margin-bottom: 16px;
+    }
+    .pillar-card h3 {
+      font-family: var(--font-display);
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 10px;
+    }
+    .pillar-card p {
+      font-size: 13.5px;
+      color: var(--text-secondary);
+      line-height: 1.65;
+    }
+
+    /* Landing Bottom CTA Banner */
+    .cta-banner {
+      background: linear-gradient(135deg, #ffffff 0%, #fcf7f4 100%);
+      border: 1px solid var(--accent-border);
+      border-radius: 20px;
+      padding: 32px 36px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       flex-wrap: wrap;
-      gap: 12px;
+      gap: 24px;
+      box-shadow: var(--shadow-md);
+      position: relative;
+      overflow: hidden;
     }
-    .brand { display: flex; align-items: baseline; gap: 10px; }
-    .brand h1 { font-size: 16px; font-weight: 800; letter-spacing: 0.5px; color: #fff; }
-    .brand .tag {
-      font-family: var(--font-mono);
-      font-size: 11px;
-      padding: 2px 7px;
-      border-radius: 4px;
-      background: #1e293b;
-      color: var(--cyan);
-      border: 1px solid var(--border-light);
+    .cta-banner h3 {
+      font-family: var(--font-display);
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
     }
-    .meta-bar {
+    .cta-banner p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      max-width: 620px;
+    }
+
+    /* ==================== WORKSPACE (STEPS 1-3) ==================== */
+    .workspace-wrap {
       display: flex;
-      align-items: center;
-      gap: 16px;
-      font-family: var(--font-mono);
-      font-size: 11px;
-      color: var(--text-muted);
-    }
-    .status-dot {
-      display: inline-block;
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--eq);
-      margin-right: 5px;
+      flex-direction: column;
+      gap: 24px;
     }
 
     /* Sequential Step Bar */
     .step-bar {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
+      gap: 14px;
+    }
+    @media (max-width: 768px) {
+      .step-bar { grid-template-columns: 1fr; }
     }
     .step-tab {
-      padding: 12px 16px;
+      padding: 16px 20px;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 14px;
       cursor: pointer;
-      background: var(--card-inner);
+      background: var(--card);
       color: var(--text-muted);
-      border-right: 1px solid var(--border);
-      transition: all 0.15s;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow-sm);
+      transition: all 0.18s ease;
       user-select: none;
+      position: relative;
+      overflow: hidden;
     }
-    .step-tab:last-child { border-right: none; }
-    .step-tab:hover { background: #131c2e; color: var(--text); }
+    .step-tab:hover {
+      border-color: var(--border-strong);
+      color: var(--text);
+      transform: translateY(-1px);
+    }
     .step-tab.active {
-      background: #172338;
-      color: #fff;
-      font-weight: 600;
-      border-bottom: 2px solid var(--cyan);
+      background: #ffffff;
+      color: var(--text);
+      font-weight: 700;
+      border-color: var(--accent);
+      box-shadow: 0 6px 20px rgba(217, 78, 40, 0.10);
     }
-    .step-tab.completed .step-badge { background: var(--eq); color: #000; }
+    .step-tab.active::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 3px;
+      background: var(--accent);
+    }
+    .step-tab.completed {
+      border-color: var(--eq-border);
+      background: #fafefd;
+      color: var(--text-secondary);
+    }
+    .step-tab.completed .step-badge {
+      background: var(--eq);
+      color: #ffffff;
+    }
     .step-badge {
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      background: #1e293b;
+      width: 30px;
+      height: 30px;
+      border-radius: 10px;
+      background: var(--bg-subtle);
       color: var(--text-muted);
       display: flex;
       align-items: center;
       justify-content: center;
       font-family: var(--font-mono);
-      font-size: 11px;
+      font-size: 12.5px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .step-tab.active .step-badge {
+      background: var(--accent);
+      color: #ffffff;
+    }
+    .step-text-main {
+      font-family: var(--font-display);
+      font-size: 14px;
       font-weight: 700;
     }
-    .step-tab.active .step-badge { background: var(--cyan); color: #000; }
+    .step-text-sub {
+      font-size: 11.5px;
+      color: var(--text-dim);
+      font-weight: 500;
+    }
 
     /* Page Sections */
     .page-section { display: none; }
-    .page-section.active { display: flex; flex-direction: column; gap: 14px; }
+    .page-section.active { display: flex; flex-direction: column; gap: 24px; animation: fadeInUp 0.25s ease; }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
 
     /* Unified Card */
     .card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 18px;
+      border-radius: 20px;
+      padding: 28px 30px;
+      box-shadow: var(--shadow-md);
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 22px;
+      position: relative;
+      overflow: hidden;
     }
     .card-head {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
       border-bottom: 1px solid var(--border);
-      padding-bottom: 12px;
+      padding-bottom: 16px;
     }
     .card-title {
-      font-size: 13px;
+      font-family: var(--font-display);
+      font-size: 16px;
       font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--text-muted);
+      letter-spacing: -0.2px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .card-badge {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border: 1px solid var(--accent-border);
+      padding: 4px 12px;
+      border-radius: 999px;
     }
 
     /* Sub Tabs & Filter Buttons */
-    .pill-group { display: flex; gap: 6px; flex-wrap: wrap; }
+    .pill-group { display: flex; gap: 8px; flex-wrap: wrap; }
     .pill-btn {
       background: var(--card-inner);
       border: 1px solid var(--border);
-      color: var(--text-muted);
-      padding: 5px 12px;
-      border-radius: 5px;
+      color: var(--text-secondary);
+      padding: 8px 16px;
+      border-radius: 10px;
       cursor: pointer;
-      font-size: 11.5px;
-      font-weight: 500;
-      transition: all 0.15s;
-    }
-    .pill-btn:hover { border-color: var(--border-light); color: var(--text); }
-    .pill-btn.active {
-      background: #1e293b;
-      color: var(--cyan);
-      border-color: var(--cyan);
+      font-family: var(--font-sans);
+      font-size: 13px;
       font-weight: 600;
+      transition: all 0.16s ease;
+    }
+    .pill-btn:hover { border-color: var(--border-strong); color: var(--text); background: #ffffff; }
+    .pill-btn.active {
+      background: var(--text);
+      color: #ffffff;
+      border-color: var(--text);
+      box-shadow: 0 4px 12px rgba(24, 24, 27, 0.14);
     }
 
-    /* Step 1 Search & Catalog Grid */
-    .search-box {
+    /* Step 1 Search & Filter Toolbar */
+    .filter-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 14px;
       background: var(--card-inner);
+      padding: 12px 16px;
+      border-radius: 14px;
       border: 1px solid var(--border);
-      color: #fff;
-      padding: 6px 12px;
-      border-radius: 5px;
-      font-size: 12px;
-      width: 280px;
-      outline: none;
     }
-    .search-box:focus { border-color: var(--cyan); }
+    .search-box {
+      background: #ffffff;
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      width: 300px;
+      max-width: 100%;
+      outline: none;
+      transition: border-color 0.16s ease, box-shadow 0.16s ease;
+    }
+    .search-box:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(217, 78, 40, 0.12);
+    }
 
+    /* Spacious Catalog Grid */
     .catalog-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
-      gap: 10px;
-      max-height: 480px;
+      grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+      gap: 16px;
+      max-height: 520px;
       overflow-y: auto;
-      padding-right: 4px;
+      padding: 4px 6px 8px 2px;
     }
-    .catalog-grid::-webkit-scrollbar { width: 5px; }
-    .catalog-grid::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+    .catalog-grid::-webkit-scrollbar { width: 6px; }
+    .catalog-grid::-webkit-scrollbar-thumb { background: #d4cdc2; border-radius: 99px; }
 
     .event-card {
-      background: var(--card-inner);
+      background: #ffffff;
       border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 12px 14px;
+      border-radius: 14px;
+      padding: 18px 20px;
       cursor: pointer;
-      transition: all 0.15s;
+      transition: all 0.18s ease;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 10px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
     }
-    .event-card:hover { border-color: var(--border-light); background: #111a2d; }
+    .event-card:hover {
+      border-color: var(--border-strong);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
     .event-card.active {
-      border-color: var(--cyan);
-      background: #14243b;
-      box-shadow: 0 0 12px rgba(6, 182, 212, 0.12);
+      border-color: var(--accent);
+      background: #fffdfb;
+      box-shadow: 0 8px 24px rgba(217, 78, 40, 0.12);
     }
-    .event-card-head { display: flex; justify-content: space-between; align-items: start; gap: 8px; }
-    .event-card-title { font-size: 12.5px; font-weight: 700; color: #fff; line-height: 1.3; }
+    .event-card.active::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      background: var(--accent);
+    }
+    .event-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+    .event-card-title {
+      font-family: var(--font-display);
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.35;
+    }
     .cat-tag {
       font-family: var(--font-mono);
-      font-size: 9.5px;
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-weight: 600;
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-weight: 700;
       white-space: nowrap;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
     }
-    .cat-tag.eq { background: var(--eq-bg); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
-    .cat-tag.anth { background: var(--anth-bg); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
-    .cat-tag.ood { background: var(--ood-bg); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+    .cat-tag.eq { background: var(--eq-bg); color: var(--eq); border: 1px solid var(--eq-border); }
+    .cat-tag.anth { background: var(--anth-bg); color: var(--anth); border: 1px solid var(--anth-border); }
+    .cat-tag.ood { background: var(--ood-bg); color: var(--ood); border: 1px solid var(--ood-border); }
 
-    .event-card-desc { font-size: 11.5px; color: var(--text-muted); line-height: 1.35; }
-    .event-card-meta { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); }
+    .event-card-desc { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
+    .event-card-meta {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      padding-top: 6px;
+      border-top: 1px dashed var(--border);
+    }
 
     /* Upload Zone */
     .dropzone {
-      border: 2px dashed var(--border-light);
-      border-radius: 6px;
-      padding: 32px;
+      border: 2px dashed var(--border-strong);
+      border-radius: 16px;
+      padding: 48px 28px;
       text-align: center;
       background: var(--card-inner);
       cursor: pointer;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 8px;
-      transition: border-color 0.15s;
+      gap: 10px;
+      transition: all 0.18s ease;
     }
-    .dropzone:hover { border-color: var(--cyan); }
+    .dropzone:hover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
     .dropzone input { display: none; }
 
-    /* Primary Action Buttons */
+    /* Primary & Secondary Action Buttons */
     .btn-primary {
-      background: #0284c7;
-      color: #fff;
-      border: 1px solid #38bdf8;
-      border-radius: 5px;
-      padding: 9px 20px;
-      font-weight: 600;
-      font-size: 12.5px;
+      background: var(--accent);
+      color: #ffffff;
+      border: 1px solid var(--accent);
+      border-radius: 11px;
+      padding: 11px 22px;
+      font-family: var(--font-sans);
+      font-weight: 700;
+      font-size: 13.5px;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      transition: background 0.15s;
+      box-shadow: 0 6px 16px rgba(217, 78, 40, 0.22);
+      transition: all 0.18s ease;
     }
-    .btn-primary:hover { background: #0369a1; }
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+      transform: translateY(-1px);
+    }
     .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
     .btn-secondary {
-      background: var(--card-inner);
+      background: #ffffff;
       color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      padding: 9px 16px;
-      font-weight: 500;
-      font-size: 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: 11px;
+      padding: 10px 18px;
+      font-family: var(--font-sans);
+      font-weight: 600;
+      font-size: 13px;
       cursor: pointer;
-      transition: background 0.15s;
+      transition: all 0.16s ease;
     }
-    .btn-secondary:hover { background: #1e293b; }
+    .btn-secondary:hover {
+      background: var(--card-inner);
+      border-color: var(--text);
+    }
 
     .nav-footer {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding-top: 10px;
+      flex-wrap: wrap;
+      gap: 16px;
+      padding-top: 18px;
       border-top: 1px solid var(--border);
     }
 
     /* Step 2 Layout */
     .step2-layout {
       display: grid;
-      grid-template-columns: 1fr 340px;
-      gap: 16px;
+      grid-template-columns: 1fr 360px;
+      gap: 24px;
     }
-    @media (max-width: 1024px) {
+    @media (max-width: 1060px) {
       .step2-layout { grid-template-columns: 1fr; }
     }
 
@@ -759,446 +1387,819 @@ HTML_PAGE = """<!DOCTYPE html>
       justify-content: space-between;
       align-items: center;
       flex-wrap: wrap;
-      background: #070b13;
+      background: var(--card-inner);
       border: 1px solid var(--border);
       border-bottom: none;
-      border-radius: 6px 6px 0 0;
-      padding: 8px 12px;
-      gap: 8px;
+      border-radius: 14px 14px 0 0;
+      padding: 10px 16px;
+      gap: 10px;
     }
-    .canvas-group { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+    .canvas-group { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 
     .ctrl-btn {
-      background: #131c2e;
-      border: 1px solid var(--border);
-      color: var(--text-muted);
-      padding: 3px 8px;
-      border-radius: 4px;
+      background: #ffffff;
+      border: 1px solid var(--border-strong);
+      color: var(--text-secondary);
+      padding: 5px 11px;
+      border-radius: 8px;
       cursor: pointer;
       font-family: var(--font-mono);
-      font-size: 11px;
+      font-size: 11.5px;
+      font-weight: 600;
+      transition: all 0.14s ease;
     }
-    .ctrl-btn.active { background: #0284c7; color: #fff; border-color: #38bdf8; }
-    .ctrl-btn:hover { color: #fff; }
+    .ctrl-btn.active {
+      background: var(--text);
+      color: #ffffff;
+      border-color: var(--text);
+    }
+    .ctrl-btn:hover:not(.active) {
+      border-color: var(--text);
+      color: var(--text);
+    }
 
     .canvas-box {
       position: relative;
-      background: #05080f;
+      background: #fcfbf8;
       border: 1px solid var(--border);
-      border-radius: 0 0 6px 6px;
+      border-radius: 0 0 14px 14px;
       overflow: hidden;
       cursor: crosshair;
+      box-shadow: inset 0 2px 6px rgba(24, 24, 27, 0.03);
     }
-    canvas#waveform-canvas { display: block; width: 100%; height: 380px; }
+    canvas#waveform-canvas { display: block; width: 100%; height: 390px; }
 
-    /* Canvas HUD */
+    /* Light Glass Canvas HUD */
     .canvas-hud {
       position: absolute;
-      top: 8px;
-      right: 12px;
-      background: rgba(11, 17, 32, 0.9);
+      top: 12px;
+      right: 14px;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      padding: 7px 14px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--text-muted);
+      display: flex;
+      gap: 14px;
+      pointer-events: none;
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* Inner Sub-Cards */
+    .sub-card {
+      background: var(--card-inner);
       border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 5px 10px;
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .sub-card-title {
       font-family: var(--font-mono);
       font-size: 11px;
-      display: flex;
-      gap: 12px;
-      pointer-events: none;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
     }
 
     /* Step 2 Right Pane: Station Array Table */
     .station-list {
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      max-height: 260px;
+      gap: 8px;
+      max-height: 290px;
       overflow-y: auto;
+      padding-right: 4px;
     }
     .station-row {
-      background: var(--card-inner);
+      background: #ffffff;
       border: 1px solid var(--border);
-      border-radius: 5px;
-      padding: 8px 10px;
+      border-radius: 11px;
+      padding: 11px 14px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 11.5px;
+      font-size: 12px;
       cursor: pointer;
-      transition: all 0.15s;
+      transition: all 0.15s ease;
     }
-    .station-row:hover { background: #131c2e; }
+    .station-row:hover { border-color: var(--border-strong); background: #fffdfb; }
     .station-row.selected {
-      border-color: var(--cyan);
-      background: #14243b;
+      border-color: var(--accent);
+      background: var(--accent-soft);
     }
-    .station-info { display: flex; flex-direction: column; gap: 2px; }
-    .station-code { font-family: var(--font-mono); font-weight: 700; color: #fff; }
-    .station-dist { font-size: 10.5px; color: var(--text-dim); }
+    .station-info { display: flex; flex-direction: column; gap: 3px; }
+    .station-code { font-family: var(--font-mono); font-weight: 700; color: var(--text); font-size: 12px; }
+    .station-dist { font-size: 11px; color: var(--text-muted); }
 
     /* Step 3 Grid */
     .step3-layout {
       display: grid;
       grid-template-columns: 1.1fr 1fr;
-      gap: 16px;
+      gap: 24px;
     }
-    @media (max-width: 900px) {
+    @media (max-width: 960px) {
       .step3-layout { grid-template-columns: 1fr; }
     }
 
     .verdict-box {
       background: var(--card-inner);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 16px;
+      border: 1.5px solid var(--border);
+      border-radius: 16px;
+      padding: 22px 24px;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 8px;
+      position: relative;
+      overflow: hidden;
+    }
+    .verdict-box.eq {
+      background: var(--eq-bg);
+      border-color: var(--eq-border);
+    }
+    .verdict-box.anth {
+      background: var(--anth-bg);
+      border-color: var(--anth-border);
+    }
+    .verdict-box.ood {
+      background: var(--ood-bg);
+      border-color: var(--ood-border);
     }
     .verdict-label {
-      font-size: 21px;
-      font-weight: 800;
-      letter-spacing: 0.5px;
-      font-family: var(--font-mono);
+      font-family: var(--font-display);
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.4px;
       text-transform: uppercase;
+      color: var(--text);
     }
-    .verdict-box.eq .verdict-label { color: var(--eq); }
-    .verdict-box.anth .verdict-label { color: var(--anth); }
-    .verdict-box.ood .verdict-label { color: var(--ood); }
+    .verdict-box.eq .verdict-label { color: #047857; }
+    .verdict-box.anth .verdict-label { color: #b45309; }
+    .verdict-box.ood .verdict-label { color: #6d28d9; }
 
-    .prob-bar-track { height: 7px; background: #1c2738; border-radius: 4px; overflow: hidden; margin-top: 4px; }
-    .prob-bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
-    .prob-bar-fill.eq { background: var(--eq); }
-    .prob-bar-fill.anth { background: var(--anth); }
+    .prob-bar-track {
+      height: 9px;
+      background: #eae6de;
+      border-radius: 99px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .prob-bar-fill { height: 100%; border-radius: 99px; transition: width 0.35s ease; }
+    .prob-bar-fill.eq { background: linear-gradient(90deg, #10b981, #059669); }
+    .prob-bar-fill.anth { background: linear-gradient(90deg, #f59e0b, #d97706); }
 
     .gauge-track {
-      height: 8px;
-      border-radius: 4px;
-      background: linear-gradient(to right, #10b981 0%, #f59e0b 50%, #ef4444 100%);
+      height: 10px;
+      border-radius: 99px;
+      background: linear-gradient(to right, #10b981 0%, #f59e0b 50%, #dc2626 100%);
       position: relative;
-      margin-top: 4px;
+      margin-top: 6px;
     }
     .gauge-pin {
       position: absolute;
-      top: -2px;
-      width: 4px;
-      height: 12px;
-      background: #fff;
-      border-radius: 2px;
-      box-shadow: 0 0 4px #000;
+      top: -4px;
+      width: 6px;
+      height: 18px;
+      background: #18181b;
+      border: 2px solid #ffffff;
+      border-radius: 4px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
       transform: translateX(-50%);
-      transition: left 0.3s ease;
+      transition: left 0.35s ease;
     }
 
-    .diag-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 11px; }
-    .diag-table th, .diag-table td { padding: 6px 8px; border-bottom: 1px solid #1a2436; text-align: left; }
-    .diag-table th { color: var(--text-dim); }
-    .diag-table td.num { text-align: right; font-weight: 600; color: #fff; }
+    .diag-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 12px; }
+    .diag-table td {
+      padding: 9px 6px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      color: var(--text-secondary);
+    }
+    .diag-table tr:last-child td { border-bottom: none; }
+    .diag-table td.num { text-align: right; font-weight: 700; color: var(--text); }
 
-    .attn-matrix { display: grid; gap: 3px; }
+    .attn-matrix { display: grid; gap: 5px; }
     .attn-cell {
-      height: 30px;
+      height: 36px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-family: var(--font-mono);
-      font-size: 10.5px;
-      font-weight: 600;
-      color: #fff;
-      border-radius: 3px;
+      font-size: 11.5px;
+      font-weight: 700;
+      border-radius: 8px;
+      border: 1px solid rgba(24, 24, 27, 0.06);
+      transition: transform 0.15s ease;
     }
+    .attn-cell:hover { transform: scale(1.04); }
   </style>
 </head>
 <body>
-  <div class="container">
-    <!-- Header -->
-    <header>
-      <div class="brand">
-        <h1>SEISMO</h1>
-        <span class="tag">GATv2 + EDL Seismic Classifier</span>
+
+  <!-- Subtle Tectonic Fault Cracks Background Layer -->
+  <div class="ambient-cracks" aria-hidden="true">
+    <svg width="100%" height="100%" viewBox="0 0 1440 900" fill="none" preserveAspectRatio="xMidYMid slice">
+      <!-- Upper left tectonic fissure -->
+      <path d="M-20 110 L95 148 L158 132 L245 198 L312 185 L395 252" stroke="#D94E28" stroke-width="1.4" stroke-opacity="0.22"/>
+      <path d="M158 132 L196 86 L248 64" stroke="#D94E28" stroke-width="1" stroke-opacity="0.16"/>
+      <path d="M245 198 L228 265 L254 318" stroke="#18181B" stroke-width="1" stroke-opacity="0.10"/>
+      <!-- Lower right tectonic fault branch -->
+      <path d="M1460 760 L1320 712 L1235 745 L1120 670 L1045 695 L950 620" stroke="#18181B" stroke-width="1.3" stroke-opacity="0.14"/>
+      <path d="M1235 745 L1190 820 L1145 875" stroke="#D94E28" stroke-width="1.1" stroke-opacity="0.18"/>
+      <path d="M1120 670 L1152 605 L1195 572" stroke="#18181B" stroke-width="0.9" stroke-opacity="0.12"/>
+    </svg>
+  </div>
+
+  <!-- Top Sticky Navigation -->
+  <nav class="top-nav">
+    <div class="nav-inner">
+      <div class="brand" onclick="showLanding()">
+        <div class="brand-mark">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <path d="M2 13H6L9 5L13 19L16.5 10L19 13H22" stroke="#F8F6F2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M13 19L15 22" stroke="#D94E28" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="brand-title">
+          <h1>SEISMO</h1>
+          <span>GATv2 + EDL SEISMIC AI</span>
+        </div>
       </div>
+
+      <div class="nav-links">
+        <button class="nav-link active" id="nav-btn-landing" onclick="showLanding()">Overview</button>
+        <button class="nav-link" id="nav-btn-workspace" onclick="openWorkspace(1)">Interactive Analyzer</button>
+        <button class="nav-link" id="nav-btn-upload" onclick="openWorkspaceUpload()">Upload Waveform</button>
+      </div>
+
       <div class="meta-bar">
-        <span><span class="status-dot"></span>Model: <b id="hdr-model">Ready</b></span>
+        <span><span class="status-dot"></span><b id="hdr-model">Ready</b></span>
         <span>Params: <b id="hdr-params">--</b></span>
         <span>Device: <b id="hdr-device">--</b></span>
       </div>
-    </header>
+    </div>
+  </nav>
 
-    <!-- Step Navigation Bar -->
-    <div class="step-bar">
-      <div class="step-tab active" id="tab-step-1" onclick="goToStep(1)">
-        <div class="step-badge">1</div>
-        <div>1. Select Waveform Scenario</div>
+  <!-- ==================== VIEW 1: THEMED LANDING PAGE ==================== -->
+  <main class="view-container" id="landing-view">
+    <section class="landing-hero">
+      <div>
+        <div class="hero-eyebrow">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1 9H4.5L6.5 3L9.5 13L11.5 7.5L13 9H15" stroke="#D94E28" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Pacific Northwest Seismic Network &bull; Evidential GNN
+        </div>
+
+        <h2 class="hero-title">
+          Reading the Earth's <span class="accent-word">Fractures</span> with Certainty.
+        </h2>
+
+        <p class="hero-desc">
+          SEISMO discriminates natural tectonic earthquakes from anthropogenic quarry blasts across multi-station networks using Dynamic Graph Attention (GATv2) and Subjective Logic Evidential Deep Learning &mdash; automatically flagging exotic out-of-distribution anomalies.
+        </p>
+
+        <div class="hero-actions">
+          <button class="btn-hero-primary" onclick="openWorkspace(1)">
+            Launch Seismic Analyzer
+            <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M4 10H16M16 10L11 5M16 10L11 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="btn-hero-secondary" onclick="openWorkspaceUpload()">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M10 13V4M10 4L6.5 7.5M10 4L13.5 7.5M3 15.5H17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Test Custom CSV / JSON
+          </button>
+        </div>
+
+        <div class="hero-trust-row">
+          <div class="trust-item">
+            <span class="trust-val">93.43%</span>
+            <span class="trust-lbl">2021+ Test Accuracy</span>
+          </div>
+          <div class="trust-item">
+            <span class="trust-val">+87.5%</span>
+            <span class="trust-lbl">OOD Vacuity Shift</span>
+          </div>
+          <div class="trust-item">
+            <span class="trust-val">13,084</span>
+            <span class="trust-lbl">PNW Balanced Events</span>
+          </div>
+          <div class="trust-item">
+            <span class="trust-val">348K</span>
+            <span class="trust-lbl">Trained Parameters</span>
+          </div>
+        </div>
       </div>
-      <div class="step-tab" id="tab-step-2" onclick="goToStep(2)">
-        <div class="step-badge">2</div>
-        <div>2. Waveforms &amp; Network Setup</div>
+
+      <!-- Right Hero Interactive Live Seismograph Card -->
+      <div class="hero-visual-card">
+        <svg class="hero-crack-overlay" viewBox="0 0 200 180" fill="none">
+          <path d="M200 18 L155 44 L132 34 L94 78 L66 68 L28 112" stroke="#D94E28" stroke-width="2"/>
+          <path d="M132 34 L118 8" stroke="#18181B" stroke-width="1.5"/>
+          <path d="M94 78 L112 118 L98 148" stroke="#D94E28" stroke-width="1.4"/>
+        </svg>
+
+        <div class="hero-card-top">
+          <div class="live-pill">
+            <span class="live-pulse"></span>
+            LIVE SEISMOGRAPH MONITOR
+          </div>
+          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">UW.ALKI &bull; 50 Hz &bull; E / N / Z</span>
+        </div>
+
+        <div class="hero-canvas-frame">
+          <canvas id="hero-seismo-canvas" width="560" height="250"></canvas>
+        </div>
+
+        <div class="hero-card-metrics">
+          <div class="mini-metric">
+            <div class="mini-metric-lbl">In-Domain Vacuity</div>
+            <div class="mini-metric-val" style="color: var(--eq);">u = 0.2196</div>
+          </div>
+          <div class="mini-metric">
+            <div class="mini-metric-lbl">Exotic OOD Vacuity</div>
+            <div class="mini-metric-val" style="color: var(--ood);">u = 0.4117</div>
+          </div>
+          <div class="mini-metric">
+            <div class="mini-metric-lbl">Curated Scenarios</div>
+            <div class="mini-metric-val" style="color: var(--accent);">22 Ready</div>
+          </div>
+        </div>
       </div>
-      <div class="step-tab" id="tab-step-3" onclick="goToStep(3)">
-        <div class="step-badge">3</div>
-        <div>3. Evidential Classification</div>
-      </div>
+    </section>
+
+    <!-- Tectonic Fault-Line Divider -->
+    <div class="fault-divider-wrap" aria-hidden="true">
+      <svg viewBox="0 0 1200 28" fill="none" preserveAspectRatio="none">
+        <path d="M0 14 L240 14 L268 7 L298 20 L330 10 L358 16 L400 14 L760 14 L788 22 L818 6 L848 18 L874 12 L910 14 L1200 14" stroke="#D4CDC2" stroke-width="1.5"/>
+        <path d="M268 7 L298 20 L330 10" stroke="#D94E28" stroke-width="2" stroke-linecap="round"/>
+        <path d="M788 22 L818 6 L848 18" stroke="#D94E28" stroke-width="2" stroke-linecap="round"/>
+      </svg>
     </div>
 
-    <!-- ==================== STEP 1: INPUT SELECTION ==================== -->
-    <section class="page-section active" id="page-step-1">
-      <div class="card">
-        <div class="card-head">
-          <div class="card-title">Step 1 &mdash; Select Input Waveform Scenario</div>
-          <span style="font-size: 11px; color: var(--cyan); font-family: var(--font-mono);" id="catalog-count-badge">Catalog: 22 Events</span>
+    <!-- Three-Stage Architecture Highlights -->
+    <section>
+      <div class="section-heading">
+        <div>
+          <div class="section-kicker">End-to-End Geophysical Architecture</div>
+          <h2 class="section-h2">Built for Multi-Station Wavefield Reasoning</h2>
+        </div>
+        <span style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);">1D TCN &rarr; k-NN GATv2 &rarr; Dirichlet EDL</span>
+      </div>
+
+      <div class="pillar-grid">
+        <div class="pillar-card">
+          <svg class="pillar-crack" viewBox="0 0 110 90" fill="none">
+            <path d="M110 12 L76 34 L58 28 L34 62 L10 88" stroke="#D94E28" stroke-width="1.8"/>
+            <path d="M58 28 L48 5" stroke="#18181B" stroke-width="1.2"/>
+          </svg>
+          <span class="pillar-num">STAGE 01 &bull; ENCODER</span>
+          <h3>Dilated 1D Residual CNN</h3>
+          <p>
+            Four residual blocks with exponential dilations (1, 2, 4, 8) extract 128-dimensional embeddings from 3-component (E, N, Z) traces while preserving critical vertical-to-horizontal amplitude ratios.
+          </p>
         </div>
 
-        <!-- Mode Toggle -->
-        <div class="pill-group">
-          <button class="pill-btn active" id="btn-mode-presets" onclick="switchCatalogMode('presets')">Curated Seismic Events (22)</button>
-          <button class="pill-btn" id="btn-mode-upload" onclick="switchCatalogMode('upload')">Upload Custom File (.CSV / .JSON)</button>
+        <div class="pillar-card">
+          <svg class="pillar-crack" viewBox="0 0 110 90" fill="none">
+            <path d="M110 26 L82 40 L68 58 L38 52 L8 84" stroke="#059669" stroke-width="1.8"/>
+            <path d="M68 58 L84 86" stroke="#18181B" stroke-width="1.2"/>
+          </svg>
+          <span class="pillar-num">STAGE 02 &bull; SPATIAL GRAPH</span>
+          <h3>Dynamic GATv2 Attention</h3>
+          <p>
+            Connects active stations via Haversine k-NN graphs with 4 attention heads. Mask-aware message passing prioritizes near-source stations with clear P/S separation and adapts to telemetry dropouts.
+          </p>
         </div>
 
-        <!-- Mode Presets -->
-        <div id="section-presets" style="display: flex; flex-direction: column; gap: 10px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; background: var(--card-inner); padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);">
-            <div class="pill-group">
-              <button class="ctrl-btn active" id="filter-all" onclick="filterCatalog('all')">All (22)</button>
-              <button class="ctrl-btn" id="filter-eq" onclick="filterCatalog('Earthquake')">Earthquakes (8)</button>
-              <button class="ctrl-btn" id="filter-anth" onclick="filterCatalog('Quarry Blast')">Quarry Blasts (8)</button>
-              <button class="ctrl-btn" id="filter-ood" onclick="filterCatalog('Out-of-Distribution')">OOD / Exotic (6)</button>
-            </div>
-            <input type="text" class="search-box" id="search-box" placeholder="Search events, stations, locations..." oninput="onSearchInput(event)">
-          </div>
-
-          <div class="catalog-grid" id="catalog-grid"></div>
+        <div class="pillar-card">
+          <svg class="pillar-crack" viewBox="0 0 110 90" fill="none">
+            <path d="M110 18 L84 30 L72 48 L44 44 L16 82" stroke="#7C3AED" stroke-width="1.8"/>
+            <path d="M44 44 L36 18" stroke="#18181B" stroke-width="1.2"/>
+          </svg>
+          <span class="pillar-num">STAGE 03 &bull; UNCERTAINTY</span>
+          <h3>Evidential Dirichlet Head</h3>
+          <p>
+            Replaces overconfident softmax outputs with Subjective Logic evidence parameters. Quantifies epistemic vacuity (u = K / S) to flag unfamiliar volcanic tremors, landslides, and sonic booms.
+          </p>
         </div>
+      </div>
 
-        <!-- Mode Upload -->
-        <div id="section-upload" style="display: none; flex-direction: column; gap: 12px;">
-          <div class="dropzone" onclick="document.getElementById('file-picker').click()">
-            <div style="font-size: 26px; color: var(--cyan);">&#8682;</div>
-            <div style="font-weight: 600; font-size: 13px;">Click to Browse or Drag &amp; Drop Waveform File</div>
-            <div style="font-size: 11px; color: var(--text-muted);">
-              Supports <b>.csv</b> (columns: E, N, Z or time, E, N, Z) or <b>.json</b> (multi-station event)
-            </div>
-            <input type="file" id="file-picker" accept=".json,.csv" onchange="onFileUploaded(event)">
-          </div>
-
-          <div id="upload-status" style="display: none; background: var(--card-inner); padding: 10px; border-radius: 4px; border: 1px solid var(--border-light); font-family: var(--font-mono); font-size: 11.5px;"></div>
-
-          <div style="display: flex; gap: 12px; font-size: 11px; color: var(--text-muted); align-items: center;">
-            <span>Download Format Templates:</span>
-            <a href="/api/template/csv" download="template_waveform.csv" style="color: var(--cyan); text-decoration: none;">&darr; Sample CSV</a>
-            <span>&bull;</span>
-            <a href="/api/template/json" download="template_waveform.json" style="color: var(--cyan); text-decoration: none;">&darr; Sample JSON</a>
-          </div>
+      <div class="cta-banner">
+        <div>
+          <h3>Ready to inspect waveforms and run live evidential inference?</h3>
+          <p>Explore 22 curated Pacific Northwest earthquakes, quarry blasts, and exotic OOD events, simulate sensor noise or station dropouts, or upload your own CSV/JSON trace.</p>
         </div>
+        <button class="btn-hero-primary" onclick="openWorkspace(1)">
+          Open 3-Step Analyzer &rarr;
+        </button>
+      </div>
+    </section>
+  </main>
 
-        <!-- Summary & Next Button -->
-        <div class="nav-footer">
+  <!-- ==================== VIEW 2: 3-STEP INTERACTIVE WORKSPACE ==================== -->
+  <main class="view-container hidden-view" id="workspace-view">
+    <div class="workspace-wrap">
+      <!-- Step Navigation Bar -->
+      <div class="step-bar">
+        <div class="step-tab active" id="tab-step-1" onclick="goToStep(1)">
+          <div class="step-badge">1</div>
           <div>
-            <div style="font-size: 10.5px; color: var(--text-dim); text-transform: uppercase;">Selected Event:</div>
-            <div style="font-size: 13.5px; font-weight: 700; color: #fff;" id="selected-title">Loading...</div>
-            <div style="font-size: 11px; color: var(--cyan); font-family: var(--font-mono);" id="selected-meta"></div>
+            <div class="step-text-main">Select Waveform Scenario</div>
+            <div class="step-text-sub">22 curated events or CSV/JSON upload</div>
           </div>
-          <button class="btn-primary" onclick="goToStep(2)">
-            Inspect Waveforms &rarr;
-          </button>
+        </div>
+        <div class="step-tab" id="tab-step-2" onclick="goToStep(2)">
+          <div class="step-badge">2</div>
+          <div>
+            <div class="step-text-main">Waveforms &amp; Network Setup</div>
+            <div class="step-text-sub">Inspect E/N/Z traces, dropout &amp; noise</div>
+          </div>
+        </div>
+        <div class="step-tab" id="tab-step-3" onclick="goToStep(3)">
+          <div class="step-badge">3</div>
+          <div>
+            <div class="step-text-main">Evidential Classification</div>
+            <div class="step-text-sub">Verdict, vacuity gauge &amp; GATv2 matrix</div>
+          </div>
         </div>
       </div>
-    </section>
 
-    <!-- ==================== STEP 2: WAVEFORMS & NETWORK SETUP ==================== -->
-    <section class="page-section" id="page-step-2">
-      <div class="card">
-        <div class="card-head">
-          <div class="card-title">Step 2 &mdash; Waveform Inspector &amp; Station Network</div>
-          <span style="font-size: 11px; color: var(--cyan); font-family: var(--font-mono);" id="step2-badge"></span>
-        </div>
-
-        <div class="step2-layout">
-          <!-- Left: Waveform Canvas -->
-          <div style="display: flex; flex-direction: column;">
-            <!-- Station Tabs -->
-            <div class="pill-group" id="stn-tabs" style="margin-bottom: 8px;"></div>
-
-            <!-- Canvas Toolbar -->
-            <div class="canvas-bar">
-              <div class="canvas-group">
-                <span style="color: var(--text-muted);">Channels:</span>
-                <button class="ctrl-btn active" id="btn-comp-0" onclick="toggleChannel(0)">E (East)</button>
-                <button class="ctrl-btn active" id="btn-comp-1" onclick="toggleChannel(1)">N (North)</button>
-                <button class="ctrl-btn active" id="btn-comp-2" onclick="toggleChannel(2)">Z (Vert)</button>
-              </div>
-
-              <div class="canvas-group">
-                <span style="color: var(--text-muted);">Gain:</span>
-                <button class="ctrl-btn active" id="gain-1" onclick="setGain(1.0)">1.0x</button>
-                <button class="ctrl-btn" id="gain-2" onclick="setGain(2.0)">2.0x</button>
-                <button class="ctrl-btn" id="gain-4" onclick="setGain(4.0)">4.0x</button>
-              </div>
-
-              <div class="canvas-group">
-                <button class="ctrl-btn" onclick="resetZoom()">&#x21ba; Reset Zoom</button>
-              </div>
-            </div>
-
-            <!-- Interactive Canvas -->
-            <div class="canvas-box" id="canvas-wrapper">
-              <canvas id="waveform-canvas" width="800" height="380"></canvas>
-              <div class="canvas-hud">
-                <div>Time: <span id="hud-time" style="color: #fff; font-weight: 700;">--</span></div>
-                <div>E: <span id="hud-e" style="color: var(--cyan); font-weight: 700;">--</span></div>
-                <div>N: <span id="hud-n" style="color: var(--blue); font-weight: 700;">--</span></div>
-                <div>Z: <span id="hud-z" style="color: #fbbf24; font-weight: 700;">--</span></div>
-              </div>
-            </div>
-
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
-              <span style="font-size: 10px; color: var(--text-dim); font-family: var(--font-mono);">
-                Drag horizontally to zoom. Hover to inspect sample amplitudes. Red line marks P-arrival (10.0s).
-              </span>
-              <span style="font-size: 10.5px; color: var(--cyan); font-family: var(--font-mono);" id="zoom-indicator">Window: 0.0s &ndash; 60.0s</span>
-            </div>
-
-            <div style="font-size: 11.5px; color: var(--text-muted); background: var(--card-inner); padding: 10px; border-radius: 5px; border-left: 3px solid var(--cyan); margin-top: 10px;" id="event-desc-box"></div>
+      <!-- ==================== STEP 1: INPUT SELECTION ==================== -->
+      <section class="page-section active" id="page-step-1">
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title">Step 1 &mdash; Select Input Waveform Scenario</div>
+            <span class="card-badge" id="catalog-count-badge">Catalog: 22 Events</span>
           </div>
 
-          <!-- Right: Station Array & Robustness -->
-          <div style="display: flex; flex-direction: column; gap: 14px;">
-            <!-- Station Array Panel -->
-            <div style="background: var(--card-inner); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
-              <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted);">Station Array Network</span>
-                <span style="font-size: 10px; font-family: var(--font-mono); color: var(--cyan);" id="active-stn-badge">-- Active</span>
+          <!-- Mode Toggle -->
+          <div class="pill-group">
+            <button class="pill-btn active" id="btn-mode-presets" onclick="switchCatalogMode('presets')">Curated Seismic Events (22)</button>
+            <button class="pill-btn" id="btn-mode-upload" onclick="switchCatalogMode('upload')">Upload Custom File (.CSV / .JSON)</button>
+          </div>
+
+          <!-- Mode Presets -->
+          <div id="section-presets" style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="filter-toolbar">
+              <div class="pill-group">
+                <button class="ctrl-btn active" id="filter-all" onclick="filterCatalog('all')">All (22)</button>
+                <button class="ctrl-btn" id="filter-eq" onclick="filterCatalog('Earthquake')">Earthquakes (8)</button>
+                <button class="ctrl-btn" id="filter-anth" onclick="filterCatalog('Quarry Blast')">Quarry Blasts (8)</button>
+                <button class="ctrl-btn" id="filter-ood" onclick="filterCatalog('Out-of-Distribution')">OOD / Exotic (6)</button>
               </div>
-              <div class="station-list" id="station-list"></div>
-              <span style="font-size: 10px; color: var(--text-dim);">
-                Click a station row to view its waveform. Uncheck the checkbox to simulate sensor telemetry dropout.
-              </span>
+              <input type="text" class="search-box" id="search-box" placeholder="Search events, stations, locations..." oninput="onSearchInput(event)">
             </div>
 
-            <!-- Robustness: Gaussian Noise Slider -->
-            <div style="background: var(--card-inner); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
-              <div style="display: flex; justify-content: space-between; font-size: 11px;">
-                <span style="font-weight: 700; text-transform: uppercase; color: var(--text-muted);">Injected Gaussian Noise</span>
-                <span id="noise-val" style="font-family: var(--font-mono); color: var(--cyan); font-weight: 700;">&sigma; = 0.00</span>
+            <div class="catalog-grid" id="catalog-grid"></div>
+          </div>
+
+          <!-- Mode Upload -->
+          <div id="section-upload" style="display: none; flex-direction: column; gap: 16px;">
+            <div class="dropzone" onclick="document.getElementById('file-picker').click()">
+              <div style="width: 48px; height: 48px; border-radius: 14px; background: var(--accent-soft); border: 1px solid var(--accent-border); display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 22px; font-weight: 700;">&#8682;</div>
+              <div style="font-family: var(--font-display); font-weight: 700; font-size: 16px; color: var(--text);">Click to Browse or Drag &amp; Drop Waveform File</div>
+              <div style="font-size: 13px; color: var(--text-muted);">
+                Supports <b>.csv</b> (columns: E, N, Z or time, E, N, Z) or <b>.json</b> (multi-station event)
               </div>
-              <input type="range" id="noise-slider" min="0" max="0.20" step="0.02" value="0" style="width: 100%; accent-color: var(--cyan);">
-              <span style="font-size: 10px; color: var(--text-dim);">
-                Injects microseismic noise to evaluate Evidential vacuity degradation.
-              </span>
+              <input type="file" id="file-picker" accept=".json,.csv" onchange="onFileUploaded(event)">
+            </div>
+
+            <div id="upload-status" style="display: none; background: var(--card-inner); padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border-strong); font-family: var(--font-mono); font-size: 12px;"></div>
+
+            <div style="display: flex; gap: 14px; font-size: 12.5px; color: var(--text-muted); align-items: center; flex-wrap: wrap;">
+              <span style="font-weight: 600;">Download Format Templates:</span>
+              <a href="/api/template/csv" download="template_waveform.csv" style="color: var(--accent); font-weight: 600; text-decoration: none;">&darr; Sample CSV</a>
+              <span>&bull;</span>
+              <a href="/api/template/json" download="template_waveform.json" style="color: var(--accent); font-weight: 600; text-decoration: none;">&darr; Sample JSON</a>
             </div>
           </div>
-        </div>
 
-        <div class="nav-footer">
-          <button class="btn-secondary" onclick="goToStep(1)">&larr; Back to Step 1</button>
-          <button class="btn-primary" onclick="goToStep(3)">
-            Run Model Classification &rarr;
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <!-- ==================== STEP 3: EVIDENTIAL INFERENCE & DIAGNOSTICS ==================== -->
-    <section class="page-section" id="page-step-3">
-      <div class="card">
-        <div class="card-head">
-          <div class="card-title">Step 3 &mdash; Model Classification &amp; Evidential Diagnostics</div>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <span style="font-size: 11px; color: var(--text-dim); font-family: var(--font-mono);" id="step3-latency">Latency: -- ms</span>
-            <button class="btn-secondary" style="padding: 5px 10px; font-size: 11px;" onclick="executeInference()">&#x21ba; Re-Run</button>
-            <button class="btn-secondary" style="padding: 5px 10px; font-size: 11px; color: var(--cyan);" onclick="exportAuditJSON()">&darr; Export Audit JSON</button>
+          <!-- Summary & Next Button -->
+          <div class="nav-footer">
+            <div>
+              <div style="font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;">Selected Event</div>
+              <div style="font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--text);" id="selected-title">Loading...</div>
+              <div style="font-size: 12px; color: var(--accent); font-family: var(--font-mono);" id="selected-meta"></div>
+            </div>
+            <button class="btn-primary" onclick="goToStep(2)">
+              Inspect Waveforms &rarr;
+            </button>
           </div>
         </div>
+      </section>
 
-        <div class="step3-layout">
-          <!-- Left: Classification & Uncertainty -->
-          <div style="display: flex; flex-direction: column; gap: 14px;">
-            <!-- Primary Verdict -->
-            <div class="verdict-box" id="verdict-card">
-              <div style="font-size: 10px; text-transform: uppercase; color: var(--text-dim);">Classification Verdict</div>
-              <div class="verdict-label" id="verdict-label">EVALUATING...</div>
-              <div style="font-size: 11.5px; color: var(--text-muted);" id="verdict-sub">Computing GATv2 node embeddings...</div>
-            </div>
+      <!-- ==================== STEP 2: WAVEFORMS & NETWORK SETUP ==================== -->
+      <section class="page-section" id="page-step-2">
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title">Step 2 &mdash; Waveform Inspector &amp; Station Network</div>
+            <span class="card-badge" id="step2-badge"></span>
+          </div>
 
-            <!-- Probabilities -->
-            <div style="background: var(--card-inner); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 10px;">
-              <span style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; color: var(--text-dim);">Class Probability Distribution</span>
+          <div class="step2-layout">
+            <!-- Left: Waveform Canvas -->
+            <div style="display: flex; flex-direction: column;">
+              <!-- Station Tabs -->
+              <div class="pill-group" id="stn-tabs" style="margin-bottom: 12px;"></div>
 
-              <div>
-                <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11px;">
-                  <span>Natural Tectonic Earthquake</span>
-                  <span id="prob-eq-val" style="font-weight: 700; color: var(--eq);">--%</span>
+              <!-- Canvas Toolbar -->
+              <div class="canvas-bar">
+                <div class="canvas-group">
+                  <span style="color: var(--text-muted); font-weight: 600;">Channels:</span>
+                  <button class="ctrl-btn active" id="btn-comp-0" onclick="toggleChannel(0)">E (East)</button>
+                  <button class="ctrl-btn active" id="btn-comp-1" onclick="toggleChannel(1)">N (North)</button>
+                  <button class="ctrl-btn active" id="btn-comp-2" onclick="toggleChannel(2)">Z (Vert)</button>
                 </div>
-                <div class="prob-bar-track">
-                  <div class="prob-bar-fill eq" id="prob-eq-bar" style="width: 0%;"></div>
+
+                <div class="canvas-group">
+                  <span style="color: var(--text-muted); font-weight: 600;">Gain:</span>
+                  <button class="ctrl-btn active" id="gain-1" onclick="setGain(1.0)">1.0x</button>
+                  <button class="ctrl-btn" id="gain-2" onclick="setGain(2.0)">2.0x</button>
+                  <button class="ctrl-btn" id="gain-4" onclick="setGain(4.0)">4.0x</button>
+                </div>
+
+                <div class="canvas-group">
+                  <button class="ctrl-btn" onclick="resetZoom()">&#x21ba; Reset Zoom</button>
                 </div>
               </div>
 
-              <div>
-                <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11px;">
-                  <span>Anthropogenic Event (Quarry Blast)</span>
-                  <span id="prob-anth-val" style="font-weight: 700; color: var(--anth);">--%</span>
-                </div>
-                <div class="prob-bar-track">
-                  <div class="prob-bar-fill anth" id="prob-anth-bar" style="width: 0%;"></div>
+              <!-- Interactive Canvas -->
+              <div class="canvas-box" id="canvas-wrapper">
+                <canvas id="waveform-canvas" width="800" height="390"></canvas>
+                <div class="canvas-hud">
+                  <div>Time: <span id="hud-time" style="color: var(--text); font-weight: 700;">--</span></div>
+                  <div>E: <span id="hud-e" style="color: #0284c7; font-weight: 700;">--</span></div>
+                  <div>N: <span id="hud-n" style="color: #059669; font-weight: 700;">--</span></div>
+                  <div>Z: <span id="hud-z" style="color: #d94e28; font-weight: 700;">--</span></div>
                 </div>
               </div>
+
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
+                <span style="font-size: 11.5px; color: var(--text-muted); font-family: var(--font-mono);">
+                  Drag horizontally to zoom. Hover to inspect amplitudes. Red line marks P-arrival (10.0s).
+                </span>
+                <span style="font-size: 11.5px; color: var(--accent); font-family: var(--font-mono); font-weight: 600;" id="zoom-indicator">Window: 0.0s &ndash; 60.0s</span>
+              </div>
+
+              <div style="font-size: 13px; color: var(--text-secondary); background: var(--card-inner); padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border); border-left: 4px solid var(--accent); margin-top: 14px;" id="event-desc-box"></div>
             </div>
 
-            <!-- Vacuity Uncertainty Gauge -->
-            <div style="background: var(--card-inner); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
-              <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                <span style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; color: var(--text-dim);">Epistemic Vacuity Uncertainty (u = K / S)</span>
-                <span id="vacuity-num" style="font-size: 20px; font-weight: 700; font-family: var(--font-mono);">--</span>
+            <!-- Right: Station Array & Robustness -->
+            <div style="display: flex; flex-direction: column; gap: 20px;">
+              <!-- Station Array Panel -->
+              <div class="sub-card">
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                  <span class="sub-card-title">Station Array Network</span>
+                  <span style="font-size: 11px; font-family: var(--font-mono); color: var(--accent); font-weight: 700;" id="active-stn-badge">-- Active</span>
+                </div>
+                <div class="station-list" id="station-list"></div>
+                <span style="font-size: 11.5px; color: var(--text-muted); line-height: 1.45;">
+                  Click a station row to inspect its waveform. Uncheck a station to simulate sensor telemetry dropout.
+                </span>
               </div>
-              <div class="gauge-track">
-                <div class="gauge-pin" id="vacuity-pin" style="left: 0%;"></div>
+
+              <!-- Robustness: Gaussian Noise Slider -->
+              <div class="sub-card">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span class="sub-card-title">Injected Gaussian Noise</span>
+                  <span id="noise-val" style="font-family: var(--font-mono); color: var(--accent); font-weight: 700; font-size: 13px;">&sigma; = 0.00</span>
+                </div>
+                <input type="range" id="noise-slider" min="0" max="0.20" step="0.02" value="0" style="width: 100%; accent-color: var(--accent); cursor: pointer;">
+                <span style="font-size: 11.5px; color: var(--text-muted); line-height: 1.45;">
+                  Injects microseismic noise to stress-test Evidential vacuity uncertainty degradation.
+                </span>
               </div>
-              <div style="display: flex; justify-content: space-between; font-size: 9.5px; font-family: var(--font-mono); color: var(--text-dim);">
-                <span>0.0 (High Certainty)</span>
-                <span>0.5 (Moderate Risk)</span>
-                <span>1.0 (High Vacuity / OOD)</span>
-              </div>
-              <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4;" id="vacuity-status-text"></div>
             </div>
           </div>
 
-          <!-- Right: Subjective Logic & GAT Heatmap -->
-          <div style="display: flex; flex-direction: column; gap: 14px;">
-            <!-- Subjective Logic Table -->
-            <div style="background: var(--card-inner); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 6px;">
-              <span style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; color: var(--text-dim);">Dirichlet Subjective Logic Parameters</span>
-              <table class="diag-table">
-                <tbody>
-                  <tr><td>Non-negative Evidence (e)</td><td class="num" id="diag-evidence">--</td></tr>
-                  <tr><td>Dirichlet Parameters (&alpha; = e + 1)</td><td class="num" id="diag-alpha">--</td></tr>
-                  <tr><td>Total Dirichlet Strength (S = &sum; &alpha;)</td><td class="num" id="diag-strength">--</td></tr>
-                  <tr><td>Belief Masses (b_k = e_k / S)</td><td class="num" id="diag-belief">--</td></tr>
-                  <tr><td>Belief Identity (b_eq + b_anth + u)</td><td class="num" id="diag-identity" style="color: var(--cyan);">1.0000</td></tr>
-                </tbody>
-              </table>
-            </div>
-
-            <!-- GATv2 Attention Matrix -->
-            <div style="background: var(--card-inner); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
-              <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                <span style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; color: var(--text-dim);">GATv2 Spatial Attention Matrix</span>
-                <span style="font-size: 9.5px; font-family: var(--font-mono); color: var(--text-dim);">Target &larr; Source (&alpha;<sub>ij</sub>)</span>
-              </div>
-              <div class="attn-matrix" id="attn-matrix-box"></div>
-              <span style="font-size: 10px; color: var(--text-dim);">Inter-station dynamic attention weights computed during graph message passing.</span>
-            </div>
+          <div class="nav-footer">
+            <button class="btn-secondary" onclick="goToStep(1)">&larr; Back to Step 1</button>
+            <button class="btn-primary" onclick="goToStep(3)">
+              Run Model Classification &rarr;
+            </button>
           </div>
         </div>
+      </section>
 
-        <div class="nav-footer">
-          <button class="btn-secondary" onclick="goToStep(2)">&larr; Back to Step 2: Waveforms</button>
-          <button class="btn-secondary" onclick="goToStep(1)">&#x21ba; Select New Scenario</button>
+      <!-- ==================== STEP 3: EVIDENTIAL INFERENCE & DIAGNOSTICS ==================== -->
+      <section class="page-section" id="page-step-3">
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title">Step 3 &mdash; Model Classification &amp; Evidential Diagnostics</div>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <span style="font-size: 12px; color: var(--text-muted); font-family: var(--font-mono);" id="step3-latency">Latency: -- ms</span>
+              <button class="btn-secondary" style="padding: 7px 13px; font-size: 12px;" onclick="executeInference()">&#x21ba; Re-Run</button>
+              <button class="btn-secondary" style="padding: 7px 13px; font-size: 12px; color: var(--accent); border-color: var(--accent-border);" onclick="exportAuditJSON()">&darr; Export Audit JSON</button>
+            </div>
+          </div>
+
+          <div class="step3-layout">
+            <!-- Left: Classification & Uncertainty -->
+            <div style="display: flex; flex-direction: column; gap: 20px;">
+              <!-- Primary Verdict -->
+              <div class="verdict-box" id="verdict-card">
+                <svg style="position: absolute; top: 0; right: 0; width: 130px; height: 100px; opacity: 0.14; pointer-events: none;" viewBox="0 0 130 100" fill="none">
+                  <path d="M130 10 L96 32 L78 24 L48 56 L18 82" stroke="currentColor" stroke-width="2"/>
+                  <path d="M78 24 L70 4" stroke="currentColor" stroke-width="1.3"/>
+                </svg>
+                <div style="font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted);">Classification Verdict</div>
+                <div class="verdict-label" id="verdict-label">EVALUATING...</div>
+                <div style="font-size: 13px; color: var(--text-secondary);" id="verdict-sub">Computing GATv2 node embeddings...</div>
+              </div>
+
+              <!-- Probabilities -->
+              <div class="sub-card">
+                <span class="sub-card-title">Class Probability Distribution</span>
+
+                <div>
+                  <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12.5px;">
+                    <span style="color: var(--text); font-weight: 600;">Natural Tectonic Earthquake</span>
+                    <span id="prob-eq-val" style="font-weight: 700; color: var(--eq);">--%</span>
+                  </div>
+                  <div class="prob-bar-track">
+                    <div class="prob-bar-fill eq" id="prob-eq-bar" style="width: 0%;"></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12.5px;">
+                    <span style="color: var(--text); font-weight: 600;">Anthropogenic Event (Quarry Blast)</span>
+                    <span id="prob-anth-val" style="font-weight: 700; color: var(--anth);">--%</span>
+                  </div>
+                  <div class="prob-bar-track">
+                    <div class="prob-bar-fill anth" id="prob-anth-bar" style="width: 0%;"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Vacuity Uncertainty Gauge -->
+              <div class="sub-card">
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                  <span class="sub-card-title">Epistemic Vacuity Uncertainty (u = K / S)</span>
+                  <span id="vacuity-num" style="font-size: 24px; font-weight: 700; font-family: var(--font-mono); color: var(--text);">--</span>
+                </div>
+                <div class="gauge-track">
+                  <div class="gauge-pin" id="vacuity-pin" style="left: 0%;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 10.5px; font-family: var(--font-mono); color: var(--text-dim);">
+                  <span>0.0 (High Certainty)</span>
+                  <span>0.5 (Moderate Risk)</span>
+                  <span>1.0 (High Vacuity / OOD)</span>
+                </div>
+                <div style="font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; margin-top: 4px;" id="vacuity-status-text"></div>
+              </div>
+            </div>
+
+            <!-- Right: Subjective Logic & GAT Heatmap -->
+            <div style="display: flex; flex-direction: column; gap: 20px;">
+              <!-- Subjective Logic Table -->
+              <div class="sub-card">
+                <span class="sub-card-title">Dirichlet Subjective Logic Parameters</span>
+                <table class="diag-table">
+                  <tbody>
+                    <tr><td>Non-negative Evidence (e)</td><td class="num" id="diag-evidence">--</td></tr>
+                    <tr><td>Dirichlet Parameters (&alpha; = e + 1)</td><td class="num" id="diag-alpha">--</td></tr>
+                    <tr><td>Total Dirichlet Strength (S = &sum; &alpha;)</td><td class="num" id="diag-strength">--</td></tr>
+                    <tr><td>Belief Masses (b_k = e_k / S)</td><td class="num" id="diag-belief">--</td></tr>
+                    <tr><td>Belief Identity (b_eq + b_anth + u)</td><td class="num" id="diag-identity" style="color: var(--accent);">1.0000</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- GATv2 Attention Matrix -->
+              <div class="sub-card">
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                  <span class="sub-card-title">GATv2 Spatial Attention Matrix</span>
+                  <span style="font-size: 10.5px; font-family: var(--font-mono); color: var(--text-dim);">Target &larr; Source (&alpha;<sub>ij</sub>)</span>
+                </div>
+                <div class="attn-matrix" id="attn-matrix-box"></div>
+                <span style="font-size: 11.5px; color: var(--text-muted);">Inter-station dynamic attention weights computed during graph message passing.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="nav-footer">
+            <button class="btn-secondary" onclick="goToStep(2)">&larr; Back to Step 2: Waveforms</button>
+            <button class="btn-secondary" onclick="goToStep(1)">&#x21ba; Select New Scenario</button>
+          </div>
         </div>
-      </div>
-    </section>
-  </div>
+      </section>
+    </div>
+  </main>
 
   <script>
+    // View Switching (Landing <-> Workspace)
+    function showLanding() {
+      document.getElementById('landing-view').classList.remove('hidden-view');
+      document.getElementById('workspace-view').classList.add('hidden-view');
+      document.getElementById('nav-btn-landing').classList.add('active');
+      document.getElementById('nav-btn-workspace').classList.remove('active');
+      document.getElementById('nav-btn-upload').classList.remove('active');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function openWorkspace(step = 1) {
+      document.getElementById('landing-view').classList.add('hidden-view');
+      document.getElementById('workspace-view').classList.remove('hidden-view');
+      document.getElementById('nav-btn-landing').classList.remove('active');
+      document.getElementById('nav-btn-workspace').classList.add('active');
+      document.getElementById('nav-btn-upload').classList.remove('active');
+      switchCatalogMode('presets');
+      goToStep(step);
+    }
+
+    function openWorkspaceUpload() {
+      document.getElementById('landing-view').classList.add('hidden-view');
+      document.getElementById('workspace-view').classList.remove('hidden-view');
+      document.getElementById('nav-btn-landing').classList.remove('active');
+      document.getElementById('nav-btn-workspace').classList.remove('active');
+      document.getElementById('nav-btn-upload').classList.add('active');
+      goToStep(1);
+      switchCatalogMode('upload');
+    }
+
+    // Animated Hero Live Seismograph Canvas
+    let heroPhase = 0;
+    function startHeroSeismoAnimation() {
+      const canvas = document.getElementById('hero-seismo-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+
+      function renderHeroFrame() {
+        const dpr = window.devicePixelRatio || 1;
+        const w = canvas.parentElement.clientWidth || 540;
+        const h = 250;
+        if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
+          canvas.width = Math.floor(w * dpr);
+          canvas.height = Math.floor(h * dpr);
+        }
+
+        ctx.save();
+        ctx.scale(dpr, dpr);
+
+        // Light seismograph chart paper
+        ctx.fillStyle = '#fcfbf8';
+        ctx.fillRect(0, 0, w, h);
+
+        // Fine vertical/horizontal grid
+        ctx.strokeStyle = '#efeae0';
+        ctx.lineWidth = 1;
+        for (let gx = 0; gx < w; gx += 32) {
+          ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke();
+        }
+        for (let gy = 0; gy < h; gy += 32) {
+          ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke();
+        }
+
+        // 3 Animated seismic channels
+        const channels = [
+          { y: h * 0.22, color: '#0284c7', label: 'E', amp: 20, freq: 0.085, burstPos: 0.38 },
+          { y: h * 0.52, color: '#059669', label: 'N', amp: 26, freq: 0.068, burstPos: 0.52 },
+          { y: h * 0.80, color: '#d94e28', label: 'Z', amp: 22, freq: 0.115, burstPos: 0.30 },
+        ];
+
+        channels.forEach((ch) => {
+          // Baseline
+          ctx.strokeStyle = '#e8e2d7';
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(0, ch.y); ctx.lineTo(w, ch.y); ctx.stroke();
+
+          // Channel label pill
+          ctx.fillStyle = ch.color;
+          ctx.font = '700 10px "JetBrains Mono", monospace';
+          ctx.fillText(ch.label, 10, ch.y - 12);
+
+          // Waveform trace
+          ctx.strokeStyle = ch.color;
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          for (let x = 0; x < w; x += 2) {
+            const norm = x / w;
+            const shift = (norm + heroPhase) % 1.0;
+            const d1 = shift - ch.burstPos;
+            const env1 = d1 > 0 ? Math.exp(-d1 * 11) * Math.min(1, d1 * 45) : 0;
+            const d2 = shift - (ch.burstPos + 0.16);
+            const env2 = d2 > 0 ? Math.exp(-d2 * 7) * Math.min(1, d2 * 35) * 1.25 : 0;
+
+            const micro = Math.sin(x * 0.17 + heroPhase * 40) * 1.4;
+            const sig = (Math.sin(x * ch.freq + heroPhase * 60) * env1 + Math.cos(x * ch.freq * 0.72 - heroPhase * 45) * env2) * ch.amp;
+            const py = ch.y - (micro + sig);
+            if (x === 0) ctx.moveTo(x, py);
+            else ctx.lineTo(x, py);
+          }
+          ctx.stroke();
+        });
+
+        ctx.restore();
+        heroPhase = (heroPhase + 0.0018) % 1.0;
+        requestAnimationFrame(renderHeroFrame);
+      }
+      requestAnimationFrame(renderHeroFrame);
+    }
+
     // State
     let currentStep = 1;
     let catalog = [];
@@ -1221,6 +2222,8 @@ HTML_PAGE = """<!DOCTYPE html>
 
     // Initialization
     async function init() {
+      startHeroSeismoAnimation();
+
       try {
         const info = await (await fetch('/api/model_info')).json();
         document.getElementById('hdr-model').textContent = info.model_name.replace(' (EDL)', '');
@@ -1256,8 +2259,8 @@ HTML_PAGE = """<!DOCTYPE html>
       currentStep = step;
 
       for (let s = 1; s <= 3; s++) {
-        const tab = document.getElementById(`tab-step-1`.replace('1', s));
-        const page = document.getElementById(`page-step-1`.replace('1', s));
+        const tab = document.getElementById(`tab-step-${s}`);
+        const page = document.getElementById(`page-step-${s}`);
         if (s === currentStep) {
           tab.className = 'step-tab active';
           page.className = 'page-section active';
@@ -1335,7 +2338,7 @@ HTML_PAGE = """<!DOCTYPE html>
       grid.innerHTML = '';
 
       if (filteredCatalog.length === 0) {
-        grid.innerHTML = '<div style="padding: 24px; color: var(--text-dim); text-align: center; grid-column: 1/-1;">No scenarios match filter criteria.</div>';
+        grid.innerHTML = '<div style="padding: 32px; color: var(--text-dim); text-align: center; grid-column: 1/-1;">No scenarios match filter criteria.</div>';
         return;
       }
 
@@ -1411,10 +2414,10 @@ HTML_PAGE = """<!DOCTYPE html>
           selectedStationIndex = 0;
           excludedStationIndices.clear();
           resetZoom();
-          statusEl.innerHTML = `<span style="color: var(--eq);">&#10004; Parsed <b>${file.name}</b>!</span> (${currentEvent.stations.length} station(s), 3 components, 3,000 samples @ 50 Hz)`;
+          statusEl.innerHTML = `<span style="color: var(--eq); font-weight: 700;">&#10004; Parsed ${file.name}</span> (${currentEvent.stations.length} station(s), 3 components, 3,000 samples @ 50 Hz)`;
           updateSelectedHeader();
         } catch (err) {
-          statusEl.innerHTML = `<span style="color: var(--red);">&#10008; Error:</span> ${err.message}`;
+          statusEl.innerHTML = `<span style="color: var(--red); font-weight: 700;">&#10008; Error:</span> ${err.message}`;
         }
       };
       reader.readAsText(file);
@@ -1426,7 +2429,6 @@ HTML_PAGE = """<!DOCTYPE html>
       document.getElementById('step2-badge').textContent = `Event: ${currentEvent.title}`;
       document.getElementById('event-desc-box').textContent = currentEvent.description || 'Preprocessed 3-component seismic waveform.';
 
-      // Station tabs for waveform view
       const tabs = document.getElementById('stn-tabs');
       tabs.innerHTML = '';
       currentEvent.stations.forEach((st, idx) => {
@@ -1440,18 +2442,15 @@ HTML_PAGE = """<!DOCTYPE html>
         tabs.appendChild(btn);
       });
 
-      // Station array list with persistent checkboxes
       renderStationList();
       handleCanvasResize();
     }
 
     function renderStep2WaveformOnly() {
-      // Update tab active classes
       const tabs = document.getElementById('stn-tabs').children;
       for (let i = 0; i < tabs.length; i++) {
         tabs[i].className = 'pill-btn' + (i === selectedStationIndex ? ' active' : '');
       }
-      // Update station list selection
       const rows = document.getElementById('station-list').children;
       for (let i = 0; i < rows.length; i++) {
         if (i === selectedStationIndex) rows[i].classList.add('selected');
@@ -1477,7 +2476,7 @@ HTML_PAGE = """<!DOCTYPE html>
             <span class="station-code">${st.id} &mdash; ${st.name}</span>
             <span class="station-dist">Distance: ${st.dist_km} km &bull; Coord: ${st.lat}\u00b0N, ${Math.abs(st.lon)}\u00b0W</span>
           </div>
-          <input type="checkbox" ${isIncluded ? 'checked' : ''} style="accent-color: var(--cyan); cursor: pointer;" onclick="toggleStationActive(event, ${idx})">
+          <input type="checkbox" ${isIncluded ? 'checked' : ''} style="accent-color: var(--accent); cursor: pointer; width: 16px; height: 16px;" onclick="toggleStationActive(event, ${idx})">
         `;
         container.appendChild(row);
       });
@@ -1526,7 +2525,8 @@ HTML_PAGE = """<!DOCTYPE html>
     function resetZoom() {
       zoomStart = 0.0;
       zoomEnd = 60.0;
-      document.getElementById('zoom-indicator').textContent = 'Window: 0.0s \u2013 60.0s';
+      const el = document.getElementById('zoom-indicator');
+      if (el) el.textContent = 'Window: 0.0s \u2013 60.0s';
       drawWaveform();
     }
 
@@ -1596,10 +2596,10 @@ HTML_PAGE = """<!DOCTYPE html>
 
     function handleCanvasResize() {
       const canvas = document.getElementById('waveform-canvas');
-      if (!canvas) return;
+      if (!canvas || canvas.parentElement.clientWidth === 0) return;
       const dpr = window.devicePixelRatio || 1;
       const width = canvas.parentElement.clientWidth;
-      const height = 380;
+      const height = 390;
       canvas.width = width * dpr;
       canvas.height = height * dpr;
       drawWaveform();
@@ -1607,7 +2607,7 @@ HTML_PAGE = """<!DOCTYPE html>
 
     function drawWaveform(crosshairX = null) {
       const canvas = document.getElementById('waveform-canvas');
-      if (!canvas || !currentEvent) return;
+      if (!canvas || !currentEvent || canvas.width === 0) return;
       const ctx = canvas.getContext('2d');
       const dpr = window.devicePixelRatio || 1;
       const width = canvas.width / dpr;
@@ -1616,14 +2616,14 @@ HTML_PAGE = """<!DOCTYPE html>
       ctx.save();
       ctx.scale(dpr, dpr);
 
-      // Background
-      ctx.fillStyle = '#05080f';
+      // Warm Light Seismograph Paper Background
+      ctx.fillStyle = '#fcfbf8';
       ctx.fillRect(0, 0, width, height);
 
       const spanSec = zoomEnd - zoomStart;
 
       // Time Grid Lines
-      ctx.strokeStyle = '#121a2a';
+      ctx.strokeStyle = '#ece7dd';
       ctx.lineWidth = 1;
       const stepSec = spanSec <= 5 ? 0.5 : spanSec <= 15 ? 1.0 : spanSec <= 30 ? 2.0 : 5.0;
       const firstTick = Math.ceil(zoomStart / stepSec) * stepSec;
@@ -1635,13 +2635,13 @@ HTML_PAGE = """<!DOCTYPE html>
         ctx.lineTo(x, height);
         ctx.stroke();
 
-        ctx.fillStyle = '#475569';
-        ctx.font = '10px monospace';
-        ctx.fillText(`${sec.toFixed(1)}s`, x + 3, height - 6);
+        ctx.fillStyle = '#71717a';
+        ctx.font = '500 10.5px "JetBrains Mono", monospace';
+        ctx.fillText(`${sec.toFixed(1)}s`, x + 4, height - 8);
       }
 
-      // 3 Waveform Channels (E, N, Z)
-      const colors = ['#06b6d4', '#3b82f6', '#fbbf24'];
+      // 3 Waveform Channels (E, N, Z) in high-contrast light-mode ink colors
+      const colors = ['#0284c7', '#059669', '#d94e28'];
       const labels = ['E (East-West)', 'N (North-South)', 'Z (Vertical)'];
       const bandH = height / 3;
 
@@ -1651,18 +2651,19 @@ HTML_PAGE = """<!DOCTYPE html>
           if (!visibleComponents[cIdx]) return;
           const centerY = bandH * cIdx + bandH / 2;
 
-          ctx.strokeStyle = '#0e1626';
+          ctx.strokeStyle = '#e6e0d5';
+          ctx.lineWidth = 1;
           ctx.beginPath();
           ctx.moveTo(0, centerY);
           ctx.lineTo(width, centerY);
           ctx.stroke();
 
-          ctx.fillStyle = '#64748b';
-          ctx.font = '10px monospace';
-          ctx.fillText(labels[cIdx], 8, bandH * cIdx + 14);
+          ctx.fillStyle = colors[cIdx];
+          ctx.font = '700 10.5px "JetBrains Mono", monospace';
+          ctx.fillText(labels[cIdx], 10, bandH * cIdx + 18);
 
           ctx.strokeStyle = colors[cIdx];
-          ctx.lineWidth = 1.2;
+          ctx.lineWidth = 1.35;
           ctx.beginPath();
 
           const nPts = compData.length;
@@ -1688,36 +2689,36 @@ HTML_PAGE = """<!DOCTYPE html>
       // P-Wave Arrival (t = 10.0s)
       if (10.0 >= zoomStart && 10.0 <= zoomEnd) {
         const pX = ((10.0 - zoomStart) / spanSec) * width;
-        ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = '#dc2626';
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([5, 4]);
         ctx.beginPath();
         ctx.moveTo(pX, 0);
         ctx.lineTo(pX, height);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        ctx.fillStyle = '#ef4444';
-        ctx.font = '10px monospace';
-        ctx.fillText('P (10s)', pX + 4, 18);
+        ctx.fillStyle = '#dc2626';
+        ctx.font = '700 10.5px "JetBrains Mono", monospace';
+        ctx.fillText('P (10s)', pX + 5, 20);
       }
 
       // Drag Zoom Box
       if (isDragging) {
         const x1 = Math.min(dragStartX, dragCurrX);
         const boxW = Math.abs(dragCurrX - dragStartX);
-        ctx.fillStyle = 'rgba(6, 182, 212, 0.15)';
+        ctx.fillStyle = 'rgba(217, 78, 40, 0.12)';
         ctx.fillRect(x1, 0, boxW, height);
-        ctx.strokeStyle = '#06b6d4';
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#d94e28';
+        ctx.lineWidth = 1.2;
         ctx.strokeRect(x1, 0, boxW, height);
       }
 
       // Hover Crosshair
       if (crosshairX !== null && crosshairX >= 0 && crosshairX <= width) {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.strokeStyle = 'rgba(24, 24, 27, 0.35)';
         ctx.lineWidth = 1;
-        ctx.setLineDash([2, 2]);
+        ctx.setLineDash([3, 3]);
         ctx.beginPath();
         ctx.moveTo(crosshairX, 0);
         ctx.lineTo(crosshairX, height);
@@ -1799,11 +2800,11 @@ HTML_PAGE = """<!DOCTYPE html>
 
       const statusEl = document.getElementById('vacuity-status-text');
       if (u < 0.30) {
-        statusEl.innerHTML = `<span style="color: var(--eq); font-weight: 600;">Low Vacuity (u = ${u.toFixed(3)})</span> &mdash; High Dirichlet evidence (S = ${out.evidential.strength.toFixed(2)}). Prediction is within trained in-distribution envelope.`;
+        statusEl.innerHTML = `<span style="color: var(--eq); font-weight: 700;">Low Vacuity (u = ${u.toFixed(3)})</span> &mdash; High Dirichlet evidence (S = ${out.evidential.strength.toFixed(2)}). Prediction is within trained in-distribution envelope.`;
       } else if (u < 0.45) {
-        statusEl.innerHTML = `<span style="color: var(--anth); font-weight: 600;">Moderate Vacuity (u = ${u.toFixed(3)})</span> &mdash; Signal partially degraded by noise or reduced station geometry.`;
+        statusEl.innerHTML = `<span style="color: var(--anth); font-weight: 700;">Moderate Vacuity (u = ${u.toFixed(3)})</span> &mdash; Signal partially degraded by noise or reduced station geometry.`;
       } else {
-        statusEl.innerHTML = `<span style="color: var(--red); font-weight: 600;">High Epistemic Vacuity (u = ${u.toFixed(3)})</span> &mdash; Evidential safety guard triggered. Waveform does not match known tectonic or quarry templates. Flagged for seismologist audit.`;
+        statusEl.innerHTML = `<span style="color: var(--red); font-weight: 700;">High Epistemic Vacuity (u = ${u.toFixed(3)})</span> &mdash; Evidential safety guard triggered. Waveform does not match known tectonic or quarry templates. Flagged for seismologist audit.`;
       }
 
       // Subjective Logic Table
@@ -1829,8 +2830,9 @@ HTML_PAGE = """<!DOCTYPE html>
           const val = matrix[r][c];
           const cell = document.createElement('div');
           cell.className = 'attn-cell';
-          const intensity = Math.min(1.0, val * 2.5);
-          cell.style.backgroundColor = `rgba(6, 182, 212, ${Math.max(0.08, intensity)})`;
+          const intensity = Math.min(1.0, val * 2.2);
+          cell.style.backgroundColor = `rgba(217, 78, 40, ${Math.max(0.08, intensity)})`;
+          cell.style.color = intensity > 0.55 ? '#ffffff' : '#18181b';
           cell.textContent = val.toFixed(2);
           cell.title = `Receiver ${stations[r]} \u2190 Sender ${stations[c]}: Attention Weight ${val}`;
           box.appendChild(cell);
@@ -1857,8 +2859,6 @@ HTML_PAGE = """<!DOCTYPE html>
 </body>
 </html>
 """
-
-
 @app.get("/", response_class=HTMLResponse)
 def index():
     """Serve the streamlined, polished frontend."""
