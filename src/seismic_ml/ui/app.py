@@ -1651,7 +1651,6 @@ HTML_PAGE = """<!DOCTYPE html>
       <div class="nav-links">
         <button class="nav-link active" id="nav-btn-landing" onclick="showLanding()">Overview</button>
         <button class="nav-link" id="nav-btn-workspace" onclick="openWorkspace(1)">Interactive Analyzer</button>
-        <button class="nav-link" id="nav-btn-upload" onclick="openWorkspaceUpload()">Upload Waveform</button>
       </div>
 
       <div class="meta-bar">
@@ -1683,10 +1682,6 @@ HTML_PAGE = """<!DOCTYPE html>
           <button class="btn-hero-primary" onclick="openWorkspace(1)">
             Launch Seismic Analyzer
             <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M4 10H16M16 10L11 5M16 10L11 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-          <button class="btn-hero-secondary" onclick="openWorkspaceUpload()">
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M10 13V4M10 4L6.5 7.5M10 4L13.5 7.5M3 15.5H17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Test Custom CSV / JSON
           </button>
         </div>
 
@@ -1807,7 +1802,7 @@ HTML_PAGE = """<!DOCTYPE html>
       <div class="cta-banner">
         <div>
           <h3>Ready to inspect waveforms and run live evidential inference?</h3>
-          <p>Explore 22 curated Pacific Northwest earthquakes, quarry blasts, and exotic OOD events, simulate sensor noise or station dropouts, or upload your own CSV/JSON trace.</p>
+          <p>Explore 22 curated Pacific Northwest earthquakes, quarry blasts, and exotic OOD events, and simulate sensor noise or station telemetry dropouts.</p>
         </div>
         <button class="btn-hero-primary" onclick="openWorkspace(1)">
           Open 3-Step Analyzer &rarr;
@@ -1825,7 +1820,7 @@ HTML_PAGE = """<!DOCTYPE html>
           <div class="step-badge">1</div>
           <div>
             <div class="step-text-main">Select Waveform Scenario</div>
-            <div class="step-text-sub">22 curated events or CSV/JSON upload</div>
+            <div class="step-text-sub">22 curated PNW seismic scenarios</div>
           </div>
         </div>
         <div class="step-tab" id="tab-step-2" onclick="goToStep(2)">
@@ -1852,12 +1847,6 @@ HTML_PAGE = """<!DOCTYPE html>
             <span class="card-badge" id="catalog-count-badge">Catalog: 22 Events</span>
           </div>
 
-          <!-- Mode Toggle -->
-          <div class="pill-group">
-            <button class="pill-btn active" id="btn-mode-presets" onclick="switchCatalogMode('presets')">Curated Seismic Events (22)</button>
-            <button class="pill-btn" id="btn-mode-upload" onclick="switchCatalogMode('upload')">Upload Custom File (.CSV / .JSON)</button>
-          </div>
-
           <!-- Mode Presets -->
           <div id="section-presets" style="display: flex; flex-direction: column; gap: 16px;">
             <div class="filter-toolbar">
@@ -1871,27 +1860,6 @@ HTML_PAGE = """<!DOCTYPE html>
             </div>
 
             <div class="catalog-grid" id="catalog-grid"></div>
-          </div>
-
-          <!-- Mode Upload -->
-          <div id="section-upload" style="display: none; flex-direction: column; gap: 16px;">
-            <div class="dropzone" onclick="document.getElementById('file-picker').click()">
-              <div style="width: 48px; height: 48px; border-radius: 14px; background: var(--accent-soft); border: 1px solid var(--accent-border); display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 22px; font-weight: 700;">&#8682;</div>
-              <div style="font-family: var(--font-display); font-weight: 700; font-size: 16px; color: var(--text);">Click to Browse or Drag &amp; Drop Waveform File</div>
-              <div style="font-size: 13px; color: var(--text-muted);">
-                Supports <b>.csv</b> (columns: E, N, Z or time, E, N, Z) or <b>.json</b> (multi-station event)
-              </div>
-              <input type="file" id="file-picker" accept=".json,.csv" onchange="onFileUploaded(event)">
-            </div>
-
-            <div id="upload-status" style="display: none; background: var(--card-inner); padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border-strong); font-family: var(--font-mono); font-size: 12px;"></div>
-
-            <div style="display: flex; gap: 14px; font-size: 12.5px; color: var(--text-muted); align-items: center; flex-wrap: wrap;">
-              <span style="font-weight: 600;">Download Format Templates:</span>
-              <a href="/api/template/csv" download="template_waveform.csv" style="color: var(--accent); font-weight: 600; text-decoration: none;">&darr; Sample CSV</a>
-              <span>&bull;</span>
-              <a href="/api/template/json" download="template_waveform.json" style="color: var(--accent); font-weight: 600; text-decoration: none;">&darr; Sample JSON</a>
-            </div>
           </div>
 
           <!-- Summary & Next Button -->
@@ -2144,7 +2112,6 @@ HTML_PAGE = """<!DOCTYPE html>
       document.getElementById('workspace-view').classList.add('hidden-view');
       document.getElementById('nav-btn-landing').classList.add('active');
       document.getElementById('nav-btn-workspace').classList.remove('active');
-      document.getElementById('nav-btn-upload').classList.remove('active');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
@@ -2153,19 +2120,7 @@ HTML_PAGE = """<!DOCTYPE html>
       document.getElementById('workspace-view').classList.remove('hidden-view');
       document.getElementById('nav-btn-landing').classList.remove('active');
       document.getElementById('nav-btn-workspace').classList.add('active');
-      document.getElementById('nav-btn-upload').classList.remove('active');
-      switchCatalogMode('presets');
       goToStep(step);
-    }
-
-    function openWorkspaceUpload() {
-      document.getElementById('landing-view').classList.add('hidden-view');
-      document.getElementById('workspace-view').classList.remove('hidden-view');
-      document.getElementById('nav-btn-landing').classList.remove('active');
-      document.getElementById('nav-btn-workspace').classList.remove('active');
-      document.getElementById('nav-btn-upload').classList.add('active');
-      goToStep(1);
-      switchCatalogMode('upload');
     }
 
     // Animated Hero Live Seismograph Canvas
