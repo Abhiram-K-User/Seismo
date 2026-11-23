@@ -27,6 +27,11 @@ from pydantic import BaseModel
 from seismic_ml.features.cnn_encoder import CNNEncoder
 from seismic_ml.models.gat import GAT, GATClassifier
 from seismic_ml.training.trainer import Trainer
+from seismic_ml.uncertainty.metrics import (
+    dirichlet_mutual_information,
+    dissonance,
+    predictive_entropy,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CKPT = REPO_ROOT / "outputs" / "checkpoints" / "best_model.pt"
@@ -60,6 +65,7 @@ def load_model_and_samples():
 
     embedding_dim = 64
     k_neighbors = 4
+    edge_dim = 0
     if DEFAULT_CKPT.exists():
         try:
             ckpt = torch.load(DEFAULT_CKPT, map_location="cpu")
@@ -68,12 +74,14 @@ def load_model_and_samples():
                 embedding_dim = s["classifier.linear.weight"].shape[1]
             elif "encoder.proj.weight" in s:
                 embedding_dim = s["encoder.proj.weight"].shape[0]
-            print(f"[UI] Detected embedding_dim={embedding_dim} from checkpoint.")
+            if "gat.layers.0.lin_edge.weight" in s:
+                edge_dim = int(s["gat.layers.0.lin_edge.weight"].shape[1])
+            print(f"[UI] Detected embedding_dim={embedding_dim}, edge_dim={edge_dim} from checkpoint.")
         except Exception as e:
             print(f"[UI] Warning inspecting checkpoint: {e}")
 
     encoder = CNNEncoder(embedding_dim=embedding_dim, in_channels=3, pool_time=True)
-    gat = GAT(in_dim=embedding_dim, hidden_dim=embedding_dim, out_dim=embedding_dim, num_heads=4, num_layers=2, dropout=0.1)
+    gat = GAT(in_dim=embedding_dim, hidden_dim=embedding_dim, out_dim=embedding_dim, num_heads=4, num_layers=2, dropout=0.1, edge_dim=edge_dim)
     model = GATClassifier(
         encoder=encoder,
         gat=gat,
@@ -96,6 +104,7 @@ def load_model_and_samples():
     model.eval()
 
     state["model"] = model
+    state["embedding_dim"] = embedding_dim
     state["param_count"] = sum(p.numel() for p in model.parameters())
 
     if SAMPLES_FILE.exists():
@@ -417,10 +426,15 @@ def classify_event(req: ClassifyRequest):
     strength = float(out.strength[0].item())
     uncertainty = float(out.uncertainty[0].item())
     belief = out.belief[0].cpu().numpy()
+    diss_val = float(dissonance(out.belief)[0].item())
+    mi_val = float(dirichlet_mutual_information(out.alpha)[0].item())
+    ent_val = float(predictive_entropy(out.expected_probability)[0].item())
 
-    # In the trained model checkpoint, index 0 is anthropogenic (blast) and index 1 is earthquake
-    p_anth = float(probs[0])
-    p_eq = float(probs[1])
+    # In the 128-dim production checkpoint, index 0 is anthropogenic and index 1 is earthquake;
+    # in the 64-dim showcase checkpoint (train_showcase.py), index 0 is earthquake and index 1 is anthropogenic.
+    eq_idx, anth_idx = (1, 0) if state.get("embedding_dim") == 128 else (0, 1)
+    p_eq = float(probs[eq_idx])
+    p_anth = float(probs[anth_idx])
     predicted_class = "earthquake" if p_eq > p_anth else "anthropogenic"
     confidence = max(p_eq, p_anth)
 
@@ -440,11 +454,14 @@ def classify_event(req: ClassifyRequest):
             "anthropogenic": round(p_anth, 4),
         },
         "evidential": {
-            "evidence": {"earthquake": round(float(evidence[1]), 4), "anthropogenic": round(float(evidence[0]), 4)},
-            "alpha": [round(float(alpha[1]), 4), round(float(alpha[0]), 4)],
+            "evidence": {"earthquake": round(float(evidence[eq_idx]), 4), "anthropogenic": round(float(evidence[anth_idx]), 4)},
+            "alpha": [round(float(alpha[eq_idx]), 4), round(float(alpha[anth_idx]), 4)],
             "strength": round(strength, 4),
             "vacuity_uncertainty": round(uncertainty, 4),
-            "belief": {"earthquake": round(float(belief[1]), 4), "anthropogenic": round(float(belief[0]), 4)},
+            "dissonance": round(diss_val, 4),
+            "mutual_information": round(mi_val, 4),
+            "predictive_entropy": round(ent_val, 4),
+            "belief": {"earthquake": round(float(belief[eq_idx]), 4), "anthropogenic": round(float(belief[anth_idx]), 4)},
         },
         "stations_used": [st["id"] for st in stations_filtered],
         "attention_matrix": attn_matrix,
@@ -1975,11 +1992,41 @@ HTML_PAGE = """<!DOCTYPE html>
             </div>
           </div>
 
+<<<<<<< HEAD
           <div class="nav-footer">
             <button class="btn-secondary" onclick="goToStep(1)">&larr; Back to Step 1</button>
             <button class="btn-primary" onclick="goToStep(3)">
               Run Model Classification &rarr;
             </button>
+=======
+          <!-- Right: Subjective Logic & GAT Heatmap -->
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <!-- Subjective Logic Table -->
+            <div style="background: var(--card-inner); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 6px;">
+              <span style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; color: var(--text-dim);">Dirichlet Subjective Logic Parameters</span>
+              <table class="diag-table">
+                <tbody>
+                  <tr><td>Non-negative Evidence (e)</td><td class="num" id="diag-evidence">--</td></tr>
+                  <tr><td>Dirichlet Parameters (&alpha; = e + 1)</td><td class="num" id="diag-alpha">--</td></tr>
+                  <tr><td>Total Dirichlet Strength (S = &sum; &alpha;)</td><td class="num" id="diag-strength">--</td></tr>
+                  <tr><td>Belief Masses (b_k = e_k / S)</td><td class="num" id="diag-belief">--</td></tr>
+                  <tr><td>Belief Dissonance (Aleatoric Conflict)</td><td class="num" id="diag-dissonance">--</td></tr>
+                  <tr><td>Mutual Information I[y, &pi;] (Epistemic)</td><td class="num" id="diag-mi">--</td></tr>
+                  <tr><td>Belief Identity (b_eq + b_anth + u)</td><td class="num" id="diag-identity" style="color: var(--cyan);">1.0000</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- GATv2 Attention Matrix -->
+            <div style="background: var(--card-inner); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                <span style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; color: var(--text-dim);">GATv2 Spatial Attention Matrix</span>
+                <span style="font-size: 9.5px; font-family: var(--font-mono); color: var(--text-dim);">Target &larr; Source (&alpha;<sub>ij</sub>)</span>
+              </div>
+              <div class="attn-matrix" id="attn-matrix-box"></div>
+              <span style="font-size: 10px; color: var(--text-dim);">Inter-station dynamic attention weights computed during graph message passing.</span>
+            </div>
+>>>>>>> 47ffab3d1ee209a2bcc77d8d5fc0dd762377e528
           </div>
         </div>
       </section>
@@ -2812,6 +2859,8 @@ HTML_PAGE = """<!DOCTYPE html>
       document.getElementById('diag-alpha').textContent = `[${out.evidential.alpha[0].toFixed(2)}, ${out.evidential.alpha[1].toFixed(2)}]`;
       document.getElementById('diag-strength').textContent = out.evidential.strength.toFixed(2);
       document.getElementById('diag-belief').textContent = `b_eq: ${(out.evidential.belief.earthquake * 100).toFixed(1)}% | b_anth: ${(out.evidential.belief.anthropogenic * 100).toFixed(1)}%`;
+      document.getElementById('diag-dissonance').textContent = out.evidential.dissonance !== undefined ? out.evidential.dissonance.toFixed(4) : '--';
+      document.getElementById('diag-mi').textContent = out.evidential.mutual_information !== undefined ? `${out.evidential.mutual_information.toFixed(4)} nats` : '--';
 
       // GATv2 Attention Matrix
       renderAttentionHeatmap(out.attention_matrix, out.stations_used);

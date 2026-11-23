@@ -19,7 +19,7 @@ import torch
 
 from seismic_ml.config import load_config
 from seismic_ml.data.loader import create_dataloader
-from seismic_ml.data.processed import ProcessedEventDataset
+from seismic_ml.data.processed import FastProcessedDataset
 from seismic_ml.data.splits import load_split_table
 from seismic_ml.features.cnn_encoder import CNNEncoder
 from seismic_ml.models.cnn import CNNBaseline
@@ -44,6 +44,52 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=None, help="Override max epochs.")
     parser.add_argument("--batch-size", type=int, default=None, help="Override batch size.")
     parser.add_argument("--lr", type=float, default=None, help="Override learning rate.")
+    parser.add_argument(
+        "--graph-method",
+        choices=["knn", "quadrant_knn", "radius", "gaussian_kernel", "fully_connected"],
+        default=None,
+        help="Override spatial graph construction method.",
+    )
+    parser.add_argument(
+        "--edge-dim",
+        type=int,
+        default=None,
+        help="Kinematic edge feature dimension for GATv2 (e.g. 4 for [d, dt_p, cos_az, sin_az], 0 to disable).",
+    )
+    parser.add_argument(
+        "--input-representation",
+        choices=["waveform", "spectrogram", "dual"],
+        default=None,
+        help="Encoder input representation: 'waveform' (1D TCN), 'spectrogram' (2D STFT), or 'dual' (1D+2D cross-attention).",
+    )
+    parser.add_argument(
+        "--station-dropout",
+        type=float,
+        default=0.0,
+        help="Stochastic station dropout probability during training (e.g. 0.25).",
+    )
+    parser.add_argument(
+        "--ood-exposure-weight",
+        type=float,
+        default=0.0,
+        help="Weight for Out-of-Distribution Exposure KL regularization on non-seismic noise/phase-scrambled signals.",
+    )
+    parser.add_argument(
+        "--cache-ram",
+        action="store_true",
+        help="Load preprocessed train/val waveforms into RAM once (~1.3 GB) for zero disk I/O.",
+    )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=None,
+        help="DataLoader worker processes (default: from config, e.g. 2 on Colab).",
+    )
+    parser.add_argument(
+        "--amp",
+        action="store_true",
+        help="Enable bfloat16 Tensor Core mixed precision on CUDA (L4/A100).",
+    )
     parser.add_argument("--run-name", default=None, help="Custom subdirectory name for outputs under output-root.")
     parser.add_argument("--clean", action="store_true", help="Remove existing output directory before starting fresh.")
     return parser.parse_args(argv)
@@ -95,13 +141,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    train_dataset = ProcessedEventDataset(processed_comcat_dir, split_table, splits=["train"])
-    val_dataset = ProcessedEventDataset(processed_comcat_dir, split_table, splits=["val"])
-    logger.info("Loaded datasets: %d train events, %d val events", len(train_dataset), len(val_dataset))
-
-    if len(train_dataset) == 0:
-        logger.error("No training events found in the processed store.")
-        return 1
+    class_names = config.get("data", {}).get("labels", {}).get("class_names") or [
+        "earthquake",
+        "anthropogenic",
+    ]
 
     # Configuration overrides
     train_cfg = config.get("training", {})
@@ -110,14 +153,44 @@ def main(argv: list[str] | None = None) -> int:
         config.setdefault("training", {})["max_epochs"] = args.epochs
     if args.lr is not None:
         config.setdefault("training", {}).setdefault("optimizer", {})["lr"] = args.lr
+    if args.station_dropout > 0.0:
+        config.setdefault("training", {})["station_dropout"] = args.station_dropout
+    if args.ood_exposure_weight > 0.0:
+        config.setdefault("training", {})["ood_exposure_weight"] = args.ood_exposure_weight
+    if args.amp:
+        config.setdefault("training", {})["amp"] = True
 
-    class_names = config.get("data", {}).get("labels", {}).get("class_names") or [
-        "earthquake",
-        "anthropogenic",
-    ]
+    train_dataset = FastProcessedDataset(
+        processed_comcat_dir,
+        split_table,
+        splits=["train"],
+        class_names=class_names,
+        cache_in_memory=args.cache_ram,
+    )
+    val_dataset = FastProcessedDataset(
+        processed_comcat_dir,
+        split_table,
+        splits=["val"],
+        class_names=class_names,
+        cache_in_memory=args.cache_ram,
+    )
+    logger.info(
+        "Loaded datasets: %d train events, %d val events (cache_ram=%s)",
+        len(train_dataset),
+        len(val_dataset),
+        args.cache_ram,
+    )
+
+    if len(train_dataset) == 0:
+        logger.error("No training events found in the processed store.")
+        return 1
 
     # Data loaders
-    num_workers = int(train_cfg.get("num_workers") or 0)
+    num_workers = int(args.num_workers if args.num_workers is not None else (train_cfg.get("num_workers") or 0))
+    if args.cache_ram and num_workers > 0:
+        # In-RAM slicing takes microseconds; single-process avoids duplicating 1.3 GB RAM across workers
+        num_workers = 0
+    pin_mem = device.startswith("cuda")
     train_loader = create_dataloader(
         train_dataset,
         batch_size=batch_size,
@@ -125,6 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         class_names=class_names,
         num_workers=num_workers,
         seed=seed,
+        pin_memory=pin_mem,
     )
     val_loader = create_dataloader(
         val_dataset,
@@ -133,6 +207,7 @@ def main(argv: list[str] | None = None) -> int:
         class_names=class_names,
         num_workers=num_workers,
         seed=seed,
+        pin_memory=pin_mem,
     )
 
     # Model architecture selection
@@ -140,11 +215,13 @@ def main(argv: list[str] | None = None) -> int:
     encoder_cfg = model_cfg.get("encoder", {})
     embedding_dim = int(encoder_cfg.get("embedding_dim") or 128)
     in_channels = int(encoder_cfg.get("in_channels") or 3)
+    input_repr = args.input_representation or encoder_cfg.get("input_representation") or "waveform"
     station_pooling = model_cfg.get("station_pooling") or "attention"
 
     encoder = CNNEncoder(
         embedding_dim=embedding_dim,
         in_channels=in_channels,
+        input_representation=input_repr,
         pool_time=True,
     )
 
@@ -159,6 +236,9 @@ def main(argv: list[str] | None = None) -> int:
         num_heads = int(gat_cfg.get("num_heads") or 4)
         num_layers = int(gat_cfg.get("num_layers") or 2)
         dropout = float(gat_cfg.get("dropout") or 0.1)
+        edge_dim = int(args.edge_dim if args.edge_dim is not None else (gat_cfg.get("edge_dim") or 0))
+        graph_method = args.graph_method or spatial_cfg.get("method") or "knn"
+        vp_km_s = float(spatial_cfg.get("vp_km_s") or 6.2)
 
         gat = GAT(
             in_dim=embedding_dim,
@@ -167,26 +247,30 @@ def main(argv: list[str] | None = None) -> int:
             num_heads=num_heads,
             num_layers=num_layers,
             dropout=dropout,
+            edge_dim=edge_dim,
         )
         model = GATClassifier(
             encoder=encoder,
             gat=gat,
             num_classes=len(class_names),
             station_pooling=station_pooling,
-            graph_method=spatial_cfg.get("method") or "knn",
+            graph_method=graph_method,
             k_neighbors=int(spatial_cfg.get("k_neighbors") or 5),
             radius_km=spatial_cfg.get("radius_km"),
             sigma_km=spatial_cfg.get("sigma_km"),
             head_type=selected_head,
             evidence_activation=args.evidence_activation,
+            vp_km_s=vp_km_s,
         )
         default_run_name = "proposed_gat_edl" if selected_head == "evidential" else "baseline3_gat"
         run_name = args.run_name or default_run_name
         logger.info(
-            "Starting training %s (CNN + GATv2 [%d layers, %d heads] + %s pooling + %s head)...",
+            "Starting training %s (CNN + GATv2 [%d layers, %d heads, graph=%s, edge_dim=%d] + %s pooling + %s head)...",
             run_name,
             num_layers,
             num_heads,
+            graph_method,
+            edge_dim,
             station_pooling,
             selected_head,
         )
@@ -253,10 +337,8 @@ def main(argv: list[str] | None = None) -> int:
             logger.info("Saved validation confusion matrix graph to %s", cm_path)
 
         # If evidential, save uncertainty distribution histogram
-        if selected_head == "evidential" and "uncertainties" in val_eval:
-            val_targets = [val_dataset[i].label for i in range(len(val_dataset))]
-            target_indices = [class_names.index(lbl) for lbl in val_targets]
-            u_fig = plot_uncertainty_distribution(val_eval["uncertainties"], target_indices, class_names)
+        if selected_head == "evidential" and "uncertainties" in val_eval and "targets" in val_eval:
+            u_fig = plot_uncertainty_distribution(val_eval["uncertainties"], val_eval["targets"], class_names)
             u_path = run_output_dir / "val_uncertainty_distribution.png"
             u_fig.savefig(u_path, dpi=200, bbox_inches="tight")
             plt.close(u_fig)

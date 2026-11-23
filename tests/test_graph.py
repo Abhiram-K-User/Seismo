@@ -8,6 +8,7 @@ import torch
 from seismic_ml.data.schemas import Station
 from seismic_ml.graph import (
     build_dynamic_graph,
+    build_kinematic_edge_features,
     build_spatial_graph,
     compute_waveform_similarity,
     pairwise_distances_km,
@@ -64,11 +65,11 @@ def test_pairwise_distances_empty() -> None:
     assert empty_dist.shape == (0, 0)
 
 
-@pytest.mark.parametrize("method", ["knn", "radius", "gaussian_kernel", "fully_connected"])
+@pytest.mark.parametrize("method", ["knn", "quadrant_knn", "radius", "gaussian_kernel", "fully_connected"])
 def test_build_spatial_graph_methods(stations: list[Station], method: str) -> None:
     kwargs = {}
-    if method == "knn":
-        kwargs["k"] = 1
+    if method in ("knn", "quadrant_knn"):
+        kwargs["k"] = 2
     elif method == "radius":
         kwargs["radius_km"] = 50.0
     elif method == "gaussian_kernel":
@@ -80,6 +81,44 @@ def test_build_spatial_graph_methods(stations: list[Station], method: str) -> No
     assert torch.allclose(adj, adj.T)
     # Self-loops should be non-zero
     assert torch.all(adj.diag() > 0.0)
+
+
+def test_quadrant_knn_preserves_azimuthal_coverage() -> None:
+    # Center node 0 surrounded by 2 clustered nodes in NE quadrant (0.01, 0.01) and (0.02, 0.02)
+    # and 1 slightly farther node in SW quadrant (-0.05, -0.05).
+    # Standard k=2 knn only connects NE neighbors; quadrant_knn (k=2) must connect SW too.
+    coords = torch.tensor([
+        [47.00, -122.00],  # 0: center
+        [47.01, -121.99],  # 1: NE very close
+        [47.02, -121.98],  # 2: NE second closest
+        [46.95, -122.05],  # 3: SW opposite quadrant
+    ])
+    adj_q = build_spatial_graph(coords, method="quadrant_knn", k=2, add_self_loops=False)
+    assert adj_q[0, 1] > 0.0
+    assert adj_q[0, 3] > 0.0  # Opposite SW quadrant preserved!
+
+
+def test_build_kinematic_edge_features() -> None:
+    coords = torch.tensor([
+        [[47.0, -122.0], [47.5, -122.0], [47.0, -121.5], [48.0, -121.0]],
+    ])
+    mask = torch.tensor([[True, True, True, False]])  # 4th station padded
+    edges = build_kinematic_edge_features(coords, station_mask=mask, vp_km_s=6.2)
+
+    assert edges.shape == (1, 4, 4, 4)
+    assert torch.isfinite(edges).all()
+    # Self-loops must be zero
+    assert torch.all(edges[0, 0, 0] == 0.0)
+    # Padded station edges must be strictly zero
+    assert torch.all(edges[0, 3, :, :] == 0.0)
+    assert torch.all(edges[0, :, 3, :] == 0.0)
+    # Station 1 is due north of Station 0 -> cos_az ~ 1.0, sin_az ~ 0.0
+    assert edges[0, 0, 1, 0] > 0.0  # norm distance
+    assert edges[0, 0, 1, 1] > 0.0  # norm P travel time
+    assert edges[0, 0, 1, 2].item() == pytest.approx(1.0, abs=1e-2)
+    assert edges[0, 0, 1, 3].item() == pytest.approx(0.0, abs=1e-2)
+    # Opposite bearing (1 -> 0 is due south) -> cos_az ~ -1.0
+    assert edges[0, 1, 0, 2].item() == pytest.approx(-1.0, abs=1e-2)
 
 
 def test_build_spatial_graph_station_mask() -> None:

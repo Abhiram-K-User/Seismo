@@ -6,7 +6,12 @@ import pytest
 import torch
 
 from seismic_ml.placeholders import NotYetImplementedError
-from seismic_ml.training.losses import annealing_coefficient, evidential_loss, kl_dirichlet_regularizer
+from seismic_ml.training.losses import (
+    annealing_coefficient,
+    evidential_loss,
+    kl_dirichlet_regularizer,
+    ood_exposure_loss,
+)
 from seismic_ml.uncertainty import (
     DirichletOutput,
     belief_masses,
@@ -130,6 +135,10 @@ def test_kl_dirichlet_regularizer() -> None:
 
     assert kl_misleading.item() > kl_clean.item()
 
+    # OOD exposure loss: zero at Dir([1, 1]), positive when any evidence > 0
+    assert ood_exposure_loss(torch.tensor([[1.0, 1.0]])).item() == pytest.approx(0.0, abs=1e-6)
+    assert ood_exposure_loss(torch.tensor([[5.0, 1.0]])).item() > 0.0
+
 
 def test_annealing_coefficient() -> None:
     assert annealing_coefficient(0, 10) == 0.0
@@ -138,9 +147,30 @@ def test_annealing_coefficient() -> None:
     assert annealing_coefficient(15, 10) == 1.0
 
 
-def test_uncertainty_scores_are_placeholders() -> None:
-    x = torch.zeros(B, K)
-    for fn in (predictive_entropy, max_probability, dirichlet_mutual_information, dissonance):
-        with pytest.raises(NotYetImplementedError) as info:
-            fn(x)
-        assert info.value.phase == 9
+def test_uncertainty_scores_phase9() -> None:
+    # 1. Uniform probabilities -> maximum predictive entropy ln(2), max_prob = 0.5
+    p_uniform = torch.tensor([[0.5, 0.5], [0.9, 0.1]])
+    ent = predictive_entropy(p_uniform)
+    max_p = max_probability(p_uniform)
+    assert ent.shape == (2,)
+    assert ent[0].item() == pytest.approx(0.693147, rel=1e-4)
+    assert ent[1].item() < ent[0].item()
+    assert torch.allclose(max_p, torch.tensor([0.5, 0.9]))
+
+    # 2. Dirichlet mutual information: higher for uniform prior Dir([1, 1]) than sharp Dir([50, 1])
+    alphas = torch.tensor([[1.0, 1.0], [50.0, 1.0]])
+    mi = dirichlet_mutual_information(alphas)
+    assert mi.shape == (2,)
+    assert torch.all(mi >= 0.0)
+    assert mi[0].item() > mi[1].item()
+
+    # 3. Subjective Logic dissonance:
+    # - Zero evidence b = [0, 0] -> dissonance = 0
+    # - One-sided evidence b = [0.8, 0.0] -> dissonance = 0
+    # - Conflicting equal evidence b = [0.45, 0.45] -> dissonance = 0.90 (high conflict)
+    beliefs = torch.tensor([[0.0, 0.0], [0.8, 0.0], [0.45, 0.45]])
+    diss = dissonance(beliefs)
+    assert diss.shape == (3,)
+    assert diss[0].item() == pytest.approx(0.0)
+    assert diss[1].item() == pytest.approx(0.0)
+    assert diss[2].item() == pytest.approx(0.90, rel=1e-4)

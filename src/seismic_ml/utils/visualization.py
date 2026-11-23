@@ -284,8 +284,72 @@ def plot_reliability_diagram(
     bin_accuracy: np.ndarray,
     bin_counts: np.ndarray,
 ) -> Any:
-    """Plot a reliability diagram from binned calibration statistics.
+    """Plot a reliability diagram from binned calibration statistics (Phase 9)."""
+    plt = _pyplot()
+    conf = np.asarray(bin_confidence, dtype=np.float64)
+    acc = np.asarray(bin_accuracy, dtype=np.float64)
+    counts = np.asarray(bin_counts, dtype=np.int64)
+    num_bins = len(conf)
+    if num_bins == 0 or len(acc) != num_bins or len(counts) != num_bins:
+        raise ValueError("bin_confidence, bin_accuracy, and bin_counts must have identical non-zero length.")
 
-    TODO(Phase 9): implement with calibration evaluation.
-    """
-    raise NotYetImplementedError("plot_reliability_diagram", phase=9)
+    edges = np.linspace(0.0, 1.0, num_bins + 1)
+    widths = np.diff(edges)
+    centers = edges[:-1] + 0.5 * widths
+    non_empty = counts > 0
+
+    fig, ax = plt.subplots(figsize=(6.0, 5.2))
+    ax.plot([0.0, 1.0], [0.0, 1.0], "--", color="0.4", lw=1.2, label="Perfect Calibration")
+    ax.bar(
+        centers[non_empty],
+        acc[non_empty],
+        width=widths[non_empty] * 0.88,
+        color="#1f77b4",
+        alpha=0.75,
+        edgecolor="black",
+        label="Empirical Accuracy",
+    )
+    ax.plot(
+        centers[non_empty],
+        conf[non_empty],
+        "o-",
+        color="#d62728",
+        lw=1.5,
+        ms=4,
+        label="Mean Confidence",
+    )
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.05)
+    ax.set_xlabel("Predicted Confidence", fontsize=10, fontweight="bold")
+    ax.set_ylabel("Empirical Accuracy", fontsize=10, fontweight="bold")
+    ax.set_title("Reliability Diagram (Calibration)", fontsize=11, fontweight="bold")
+    ax.grid(True, linestyle="--", alpha=0.5)
+    ax.legend(loc="upper left", fontsize=9)
+    fig.tight_layout()
+    return fig
+
+
+def plot_risk_coverage_curve(
+    coverage: np.ndarray,
+    risk: np.ndarray,
+    *,
+    aurc: float | None = None,
+) -> Any:
+    """Plot selective-prediction risk vs coverage curve (Phase 9)."""
+    plt = _pyplot()
+    cov = np.asarray(coverage, dtype=np.float64)
+    rsk = np.asarray(risk, dtype=np.float64)
+
+    fig, ax = plt.subplots(figsize=(6.2, 4.5))
+    label = f"Selective Risk (AURC = {aurc:.4f})" if aurc is not None else "Selective Risk"
+    ax.plot(cov, rsk, color="#2ca02c", lw=2.0, label=label)
+    ax.fill_between(cov, 0.0, rsk, color="#2ca02c", alpha=0.15)
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, max(float(rsk.max()) * 1.15 if rsk.size else 0.2, 0.05))
+    ax.set_xlabel("Coverage (Fraction of Most-Confident Events Retained)", fontsize=10, fontweight="bold")
+    ax.set_ylabel("Selective Classification Error Rate (Risk)", fontsize=10, fontweight="bold")
+    ax.set_title("Selective Prediction Risk-Coverage Curve", fontsize=11, fontweight="bold")
+    ax.grid(True, linestyle="--", alpha=0.5)
+    ax.legend(loc="upper left", fontsize=9)
+    fig.tight_layout()
+    return fig

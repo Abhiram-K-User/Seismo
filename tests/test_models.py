@@ -63,6 +63,24 @@ def test_cnn_encoder_pool_time_false() -> None:
     assert out.shape == (B, N, T, D)
 
 
+@pytest.mark.parametrize("repr_mode", ["spectrogram", "dual"])
+def test_cnn_encoder_spectrogram_and_dual_stream(repr_mode: str) -> None:
+    # 60s @ 50 Hz = 3000 samples (or shorter synthetic trace >= n_fft)
+    encoder = CNNEncoder(embedding_dim=32, in_channels=3, input_representation=repr_mode)
+    x = torch.randn(2, 3, 3, 512)
+    mask = torch.tensor([[True, True, False], [True, False, False]])
+
+    out = encoder(x, station_mask=mask)
+    assert out.shape == (2, 3, 32)
+    assert torch.isfinite(out).all()
+    assert torch.all(out[0, 2] == 0.0)
+    assert torch.all(out[1, 1:] == 0.0)
+
+    loss = out.sum()
+    loss.backward()
+    assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in encoder.parameters())
+
+
 # --- CNNBaseline -------------------------------------------------------------
 
 
@@ -161,6 +179,40 @@ def test_gat_classifier_forward() -> None:
     loss = logits.sum()
     loss.backward()
     assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in model.parameters())
+
+
+def test_gat_classifier_with_kinematic_edges() -> None:
+    encoder = CNNEncoder(embedding_dim=D)
+    gat = GAT(D, 32, 32, num_heads=4, num_layers=2, dropout=0.1, edge_dim=4)
+    model = GATClassifier(
+        encoder=encoder,
+        gat=gat,
+        num_classes=2,
+        station_pooling="attention",
+        graph_method="quadrant_knn",
+        k_neighbors=4,
+        head_type="evidential",
+    )
+
+    waveforms = torch.randn(B, N, C, T)
+    coords = torch.tensor([
+        [[47.0, -122.0], [47.2, -121.8], [46.8, -122.2], [47.3, -122.3]],
+        [[47.0, -122.0], [47.2, -121.8], [46.8, -122.2], [47.3, -122.3]],
+    ])
+    mask = torch.ones(B, N, dtype=torch.bool)
+    mask[:, -1] = False
+
+    out, attn = model(waveforms, station_mask=mask, coordinates=coords, return_attention=True)
+    assert isinstance(out, DirichletOutput)
+    assert out.expected_probability.shape == (B, 2)
+    assert attn is not None and len(attn) == 2
+
+    loss = out.alpha.sum()
+    loss.backward()
+    for layer in gat.layers:
+        assert layer.lin_edge is not None
+        assert layer.lin_edge.weight.grad is not None
+        assert layer.lin_edge.weight.grad.abs().sum() > 0
 
 
 @pytest.mark.parametrize("dropout", [-0.1, 1.0])

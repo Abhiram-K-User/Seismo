@@ -193,8 +193,51 @@ def collate_events(
     )
 
 
+def collate_fast_events(
+    items: Sequence[dict[str, Any]],
+    max_stations: int | None = None,
+) -> EventBatch:
+    """Fast collation for :class:`~seismic_ml.data.processed.FastProcessedDataset`."""
+    if not items:
+        raise ValueError("cannot collate an empty list of events")
+    b = len(items)
+    c, length = items[0]["waveforms"].shape[1:]
+    n_max = max(it["waveforms"].shape[0] for it in items)
+    n_pad = n_max if max_stations is None else max_stations
+    if n_max > n_pad:
+        raise ValueError(f"an event has {n_max} stations > max_stations={n_pad}")
+
+    waveforms = np.zeros((b, n_pad, c, length), dtype=np.float32)
+    station_mask = np.zeros((b, n_pad), dtype=bool)
+    channel_mask = np.zeros((b, n_pad, c), dtype=bool)
+    coordinates = np.zeros((b, n_pad, 2), dtype=np.float32)
+    station_ids = [["" for _ in range(n_pad)] for _ in range(b)]
+    labels = np.empty(b, dtype=np.int64)
+    event_ids = []
+
+    for i, it in enumerate(items):
+        k = it["waveforms"].shape[0]
+        waveforms[i, :k] = it["waveforms"]
+        station_mask[i, :k] = True
+        channel_mask[i, :k] = it["channel_mask"]
+        coordinates[i, :k] = it["coordinates"]
+        station_ids[i][:k] = it["station_ids"]
+        labels[i] = it["label"]
+        event_ids.append(it["event_id"])
+
+    return EventBatch(
+        waveforms=torch.from_numpy(waveforms),
+        station_mask=torch.from_numpy(station_mask),
+        event_ids=tuple(event_ids),
+        coordinates=torch.from_numpy(coordinates),
+        labels=torch.from_numpy(labels),
+        station_ids=tuple(tuple(row) for row in station_ids),
+        channel_mask=torch.from_numpy(channel_mask),
+    )
+
+
 def create_dataloader(
-    dataset: Dataset[SeismicEvent],
+    dataset: Dataset[Any],
     batch_size: int,
     *,
     shuffle: bool,
@@ -206,27 +249,16 @@ def create_dataloader(
     drop_last: bool = False,
     pin_memory: bool = False,
 ) -> DataLoader:
-    """Build a seeded DataLoader using :func:`collate_events`.
-
-    Args:
-        dataset: Dataset yielding :class:`SeismicEvent` instances.
-        batch_size: Number of events per batch.
-        shuffle: Whether to shuffle event order.
-        class_names: Expected class names for integer label mapping.
-        max_stations: Padding size ``N`` (default: largest event in the batch).
-        allow_unlabeled: Whether to accept events without labels (encoded as -1).
-        num_workers: Subprocesses for data loading.
-        seed: Random seed for reproducible shuffling generator.
-        drop_last: Whether to drop the last incomplete batch.
-        pin_memory: Whether to copy tensors into CUDA pinned memory.
-    """
+    """Build a seeded DataLoader supporting both ``SeismicEvent`` and fast array dicts."""
     generator = None
     if seed is not None:
         generator = torch.Generator().manual_seed(seed)
 
-    def _collate(events: Sequence[SeismicEvent]) -> EventBatch:
+    def _collate(items: Sequence[Any]) -> EventBatch:
+        if items and isinstance(items[0], dict):
+            return collate_fast_events(items, max_stations=max_stations)
         return collate_events(
-            events,
+            items,
             class_names=class_names,
             max_stations=max_stations,
             allow_unlabeled=allow_unlabeled,

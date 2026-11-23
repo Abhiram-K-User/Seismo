@@ -19,8 +19,15 @@ from torch import nn
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
+from seismic_ml.evaluation.calibration import brier_score, expected_calibration_error
 from seismic_ml.evaluation.classification import compute_classification_metrics, confusion_matrix
-from seismic_ml.training.losses import annealing_coefficient, cross_entropy_loss, evidential_loss
+from seismic_ml.evaluation.ood import area_under_risk_coverage, risk_coverage_curve
+from seismic_ml.training.losses import (
+    annealing_coefficient,
+    cross_entropy_loss,
+    evidential_loss,
+    ood_exposure_loss,
+)
 from seismic_ml.uncertainty.dirichlet import DirichletOutput
 
 logger = logging.getLogger("seismic_ml.training")
@@ -91,6 +98,52 @@ class Trainer:
         self.edl_variant = (edl_cfg.get("variant") if edl_cfg else None) or "digamma"
         self.annealing_epochs = int((edl_cfg.get("kl_annealing_epochs") if edl_cfg else None) or 10)
         self.kl_weight = float((edl_cfg.get("kl_weight") if edl_cfg else None) or 1.0)
+        self.station_dropout = float(train_cfg.get("station_dropout") or 0.0)
+        self.ood_exposure_weight = float(train_cfg.get("ood_exposure_weight") or 0.0)
+        self.use_amp = bool(train_cfg.get("amp") or False) and self.device.type == "cuda"
+
+    def _apply_station_dropout(self, station_mask: torch.Tensor) -> torch.Tensor:
+        """Randomly drop up to ``station_dropout`` valid stations per event, keeping >= 1."""
+        if self.station_dropout <= 0.0:
+            return station_mask
+        mask = station_mask.clone()
+        b, n = mask.shape
+        for i in range(b):
+            valid_idx = torch.where(mask[i])[0]
+            if len(valid_idx) <= 1:
+                continue
+            keep_probs = torch.rand(len(valid_idx), device=mask.device)
+            dropped = valid_idx[keep_probs < self.station_dropout]
+            if len(dropped) >= len(valid_idx):
+                # Always keep at least 1 valid station
+                keep_one = valid_idx[torch.randint(len(valid_idx), (1,), device=mask.device)]
+                mask[i, dropped] = False
+                mask[i, keep_one] = True
+            else:
+                mask[i, dropped] = False
+        return mask
+
+    def _make_ood_exposure_batch(
+        self,
+        waveforms: torch.Tensor,
+        station_mask: torch.Tensor,
+        coordinates: torch.Tensor | None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        """Generate synthetic non-seismic exposure traces (ambient noise + phase-scrambled)."""
+        n_oe = max(1, min(4, waveforms.shape[0] // 4 or 1))
+        oe_wfs = waveforms[:n_oe].clone()
+        oe_mask = station_mask[:n_oe].clone()
+        oe_coords = coordinates[:n_oe].clone() if coordinates is not None else None
+
+        # Half pure Gaussian ambient noise, half FFT phase-scrambled traces (destroys P/S kinematics)
+        half = max(1, n_oe // 2)
+        oe_wfs[:half] = torch.randn_like(oe_wfs[:half])
+        if n_oe > half:
+            spec = torch.fft.rfft(oe_wfs[half:], dim=-1)
+            rand_phase = torch.exp(1j * 2.0 * torch.pi * torch.rand_like(spec.real))
+            oe_wfs[half:] = torch.fft.irfft(spec.abs() * rand_phase, n=oe_wfs.shape[-1], dim=-1)
+
+        return oe_wfs, oe_mask, oe_coords
 
     def train_epoch(self, loader: DataLoader, *, current_epoch: int = 1, pbar: Any = None) -> dict[str, float]:
         """Run one training epoch; return aggregated metrics."""
@@ -124,16 +177,27 @@ class Trainer:
             if coordinates is not None:
                 coordinates = coordinates[valid_mask]
 
+            # Optional stochastic station dropout during training (Monograph §11 / Gap 3)
+            train_mask = self._apply_station_dropout(station_mask)
+
             self.optimizer.zero_grad()
-            out = self.model(waveforms, station_mask=station_mask, coordinates=coordinates)
+            with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=self.use_amp):
+                out = self.model(waveforms, station_mask=train_mask, coordinates=coordinates)
 
             if isinstance(out, DirichletOutput):
                 reg_weight = self.kl_weight * annealing_coefficient(current_epoch, self.annealing_epochs)
-                loss = evidential_loss(out.alpha, labels, variant=self.edl_variant, regularization_weight=reg_weight)
+                alpha_f32 = out.alpha.float()
+                loss = evidential_loss(alpha_f32, labels, variant=self.edl_variant, regularization_weight=reg_weight)
+                if self.ood_exposure_weight > 0.0:
+                    oe_wfs, oe_mask, oe_coords = self._make_ood_exposure_batch(waveforms, station_mask, coordinates)
+                    with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=self.use_amp):
+                        oe_out = self.model(oe_wfs, station_mask=oe_mask, coordinates=oe_coords)
+                    if isinstance(oe_out, DirichletOutput):
+                        loss = loss + (self.ood_exposure_weight * reg_weight) * ood_exposure_loss(oe_out.alpha.float())
                 preds = torch.argmax(out.expected_probability, dim=-1)
-                all_uncertainties.extend(out.uncertainty.detach().cpu().numpy().tolist())
+                all_uncertainties.extend(out.uncertainty.detach().float().cpu().numpy().tolist())
             else:
-                loss = cross_entropy_loss(out, labels, class_weights=self.class_weights)
+                loss = cross_entropy_loss(out.float(), labels, class_weights=self.class_weights)
                 preds = torch.argmax(out, dim=-1)
 
             loss.backward()
@@ -178,6 +242,7 @@ class Trainer:
         total_loss = 0.0
         all_preds: list[int] = []
         all_targets: list[int] = []
+        all_probs: list[list[float]] = []
         all_uncertainties: list[float] = []
         all_beliefs: list[list[float]] = []
         num_batches = 0
@@ -201,14 +266,17 @@ class Trainer:
 
                     if isinstance(out, DirichletOutput):
                         loss = evidential_loss(out.alpha, eval_labels, variant=self.edl_variant, regularization_weight=0.0)
-                        preds = torch.argmax(out.expected_probability, dim=-1)
+                        probs = out.expected_probability
+                        preds = torch.argmax(probs, dim=-1)
                         all_uncertainties.extend(out.uncertainty.detach().cpu().numpy().tolist())
                         all_beliefs.extend(out.belief.detach().cpu().numpy().tolist())
                     else:
                         loss = cross_entropy_loss(out, eval_labels, class_weights=self.class_weights)
-                        preds = torch.argmax(out, dim=-1)
+                        probs = torch.softmax(out, dim=-1)
+                        preds = torch.argmax(probs, dim=-1)
 
                     total_loss += float(loss.item())
+                    all_probs.extend(probs.detach().cpu().numpy().tolist())
                     all_preds.extend(preds.cpu().numpy().tolist())
                     all_targets.extend(eval_labels.cpu().numpy().tolist())
                     num_batches += 1
@@ -216,25 +284,45 @@ class Trainer:
                     # Unlabeled / Out-Of-Distribution evaluation
                     out = self.model(waveforms, station_mask=station_mask, coordinates=coordinates)
                     if isinstance(out, DirichletOutput):
-                        preds = torch.argmax(out.expected_probability, dim=-1)
+                        probs = out.expected_probability
+                        preds = torch.argmax(probs, dim=-1)
                         all_uncertainties.extend(out.uncertainty.detach().cpu().numpy().tolist())
                         all_beliefs.extend(out.belief.detach().cpu().numpy().tolist())
                     else:
-                        preds = torch.argmax(out, dim=-1)
+                        probs = torch.softmax(out, dim=-1)
+                        preds = torch.argmax(probs, dim=-1)
+                    all_probs.extend(probs.detach().cpu().numpy().tolist())
                     all_preds.extend(preds.cpu().numpy().tolist())
                     num_batches += 1
 
         if all_targets:
-            metrics = compute_classification_metrics(
-                np.array(all_targets), np.array(all_preds), self.class_names
-            )
+            targets_np = np.array(all_targets, dtype=np.int64)
+            preds_np = np.array(all_preds, dtype=np.int64)
+            probs_np = np.array(all_probs, dtype=np.float64)
+
+            metrics = compute_classification_metrics(targets_np, preds_np, self.class_names)
             metrics["loss"] = total_loss / max(num_batches, 1)
-            cm = confusion_matrix(np.array(all_targets), np.array(all_preds), len(self.class_names))
+            metrics["ece"] = expected_calibration_error(probs_np, targets_np, num_bins=10)
+            metrics["brier_score"] = brier_score(probs_np, targets_np)
+
+            # Selective prediction AURC using vacuity (EDL) or 1 - max_prob (Softmax)
+            unc_for_rc = (
+                np.array(all_uncertainties, dtype=np.float64)
+                if len(all_uncertainties) == len(targets_np)
+                else 1.0 - np.max(probs_np, axis=1)
+            )
+            rc_curve = risk_coverage_curve(unc_for_rc, preds_np == targets_np)
+            metrics["aurc"] = area_under_risk_coverage(rc_curve)
+
+            cm = confusion_matrix(targets_np, preds_np, len(self.class_names))
             metrics["confusion_matrix"] = cm.tolist()
+            metrics["probabilities"] = all_probs
+            metrics["targets"] = all_targets
         else:
             # For OOD/unlabeled events, classification accuracy/F1 does not apply
             metrics = {
                 "num_events": len(all_preds),
+                "probabilities": all_probs,
             }
 
         if all_uncertainties:

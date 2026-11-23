@@ -239,3 +239,132 @@ class ProcessedEventDataset(Dataset[SeismicEvent]):
         if self._h5 is not None:
             self._h5.close()
             self._h5 = None
+
+
+class FastProcessedDataset(Dataset[dict[str, Any]]):
+    """High-throughput pre-indexed dataset avoiding per-step pandas & UTC parsing.
+
+    Returns lightweight dicts of NumPy arrays rather than constructing full
+    ``SeismicEvent`` dataclasses, with optional full-RAM caching (~1.3 GB for PNW
+    comcat train+val) for zero disk I/O during multi-epoch GPU training.
+    """
+
+    def __init__(
+        self,
+        processed_dir: str | Path,
+        split_table: pd.DataFrame,
+        splits: Sequence[str],
+        *,
+        class_names: Sequence[str] = ("earthquake", "anthropogenic"),
+        allow_unlabeled: bool = False,
+        cache_in_memory: bool = False,
+    ) -> None:
+        self.processed_dir = Path(processed_dir)
+        self.class_names = list(class_names)
+        self.allow_unlabeled = bool(allow_unlabeled)
+        self.cache_in_memory = bool(cache_in_memory)
+
+        traces = pd.read_csv(
+            self.processed_dir / TRACES_FILE,
+            dtype={"event_id": str, "location_code": str, "network": str},
+        )
+        chosen = split_table[split_table["split"].isin(list(splits))].set_index("event_id")
+        traces = traces[traces["event_id"].isin(chosen.index)]
+        traces = traces.sort_values(["event_id", "station_id"]).reset_index(drop=True)
+
+        self.event_ids: list[str] = sorted(traces["event_id"].unique())
+        row_groups = traces.groupby("event_id", sort=False).indices
+
+        with h5py.File(self.processed_dir / WAVEFORMS_FILE, "r") as h5:
+            self.sampling_rate = float(h5.attrs["sampling_rate"])
+            self.num_channels = int(h5["waveforms"].shape[1])
+            self.num_samples = int(h5["waveforms"].shape[2])
+
+        class_to_idx = {name: i for i, name in enumerate(self.class_names)}
+        h5_rows_all = traces["row"].to_numpy(dtype=np.int64)
+        lats_all = traces["latitude"].to_numpy(dtype=np.float32)
+        lons_all = traces["longitude"].to_numpy(dtype=np.float32)
+        station_ids_all = traces["station_id"].astype(str).to_numpy()
+
+        # Precompute compact per-event arrays once at startup
+        self._event_h5_rows: list[np.ndarray] = []
+        self._event_coords: list[np.ndarray] = []
+        self._event_station_ids: list[tuple[str, ...]] = []
+        self._event_labels: list[int] = []
+
+        for eid in self.event_ids:
+            idx = row_groups[eid]
+            self._event_h5_rows.append(h5_rows_all[idx])
+            self._event_coords.append(np.stack([lats_all[idx], lons_all[idx]], axis=-1))
+            self._event_station_ids.append(tuple(station_ids_all[idx].tolist()))
+
+            info = chosen.loc[eid]
+            klass = info["class"] if info["split"] in ("train", "val", "test") else None
+            if klass is None or pd.isna(klass):
+                if not self.allow_unlabeled:
+                    raise ValueError(f"event {eid} has no label (set allow_unlabeled=True)")
+                self._event_labels.append(-1)
+            else:
+                self._event_labels.append(class_to_idx[str(klass)])
+
+        self._h5: h5py.File | None = None
+        self._waveforms_ram: np.ndarray | None = None
+        self._cmask_ram: np.ndarray | None = None
+
+        if self.cache_in_memory and len(self.event_ids) > 0:
+            # Load only the selected split's rows into contiguous RAM and remap indices
+            used_rows, inverse = np.unique(h5_rows_all, return_inverse=True)
+            with h5py.File(self.processed_dir / WAVEFORMS_FILE, "r") as h5:
+                self._waveforms_ram = h5["waveforms"][used_rows]
+                self._cmask_ram = h5["channel_mask"][used_rows]
+            # Remap h5_rows to local RAM indices
+            ram_map = {int(orig): int(loc) for loc, orig in enumerate(used_rows)}
+            self._event_h5_rows = [
+                np.array([ram_map[int(r)] for r in rows], dtype=np.int64)
+                for rows in self._event_h5_rows
+            ]
+
+    @property
+    def h5(self) -> h5py.File:
+        if self._h5 is None:
+            self._h5 = h5py.File(self.processed_dir / WAVEFORMS_FILE, "r")
+        return self._h5
+
+    def __len__(self) -> int:
+        return len(self.event_ids)
+
+    def __getitem__(self, index: int) -> dict[str, Any]:
+        rows = self._event_h5_rows[index]
+        if self._waveforms_ram is not None and self._cmask_ram is not None:
+            wfs = self._waveforms_ram[rows]
+            cmask = self._cmask_ram[rows]
+        else:
+            # h5py fancy indexing requires strictly increasing indices; sort then restore order
+            if len(rows) == 1:
+                wfs = self.h5["waveforms"][int(rows[0])][None, ...]
+                cmask = self.h5["channel_mask"][int(rows[0])][None, ...]
+            else:
+                order = np.argsort(rows)
+                inv = np.argsort(order)
+                sorted_rows = rows[order]
+                wfs = self.h5["waveforms"][sorted_rows][inv]
+                cmask = self.h5["channel_mask"][sorted_rows][inv]
+
+        return {
+            "event_id": self.event_ids[index],
+            "waveforms": np.asarray(wfs, dtype=np.float32),
+            "channel_mask": np.asarray(cmask, dtype=bool),
+            "coordinates": self._event_coords[index],
+            "station_ids": self._event_station_ids[index],
+            "label": self._event_labels[index],
+        }
+
+    def __getstate__(self) -> dict[str, Any]:
+        state = self.__dict__.copy()
+        state["_h5"] = None
+        return state
+
+    def close(self) -> None:
+        if self._h5 is not None:
+            self._h5.close()
+            self._h5 = None
